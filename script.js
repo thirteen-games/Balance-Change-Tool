@@ -199,9 +199,9 @@ const COLS = [
   { key: "cost",       label: "Cost",        type: "number", numeric: true, render: (r) => r.cost ?? "" },
   { key: "wins",       label: "Wins",        type: "number", numeric: true },
   { key: "losses",     label: "Losses",      type: "number", numeric: true },
-  { key: "total",      label: "Games",       type: "number", numeric: true },
+  { key: "total",      label: "Total Played", type: "number", numeric: true },
   { key: "winRate",    label: "Win %",       type: "number", numeric: true, fmt: (v) => v ? (v * 100).toFixed(1) + "%" : "—" },
-  { key: "winRate2",   label: "Norm WR",     type: "number", numeric: true, fmt: (v) => v ? v.toFixed(3) : "—" },
+  { key: "winRate2",   label: "Norm WR",     type: "number", numeric: true, fmt: (v) => v ? (v * 100).toFixed(1) + "%" : "—" },
   { key: "pctPlayed",  label: "% Play",      type: "number", numeric: true, fmt: (v) => v ? (v * 100).toFixed(2) + "%" : "—" },
   { key: "buffRating", label: "Buff Rating", type: "number", numeric: true, bar: "buff",   fmt: (v) => v.toFixed(2), max: 10 },
   { key: "ovrRating",  label: "Ovr Rating",  type: "number", numeric: true, bar: "nerf",   fmt: (v) => v.toFixed(2), max: 20 },
@@ -299,7 +299,7 @@ function renderSummary() {
 
   els.summary.innerHTML = `
     <div class="summary-card"><div class="label">Cards w/ data</div><div class="value">${totalCards}</div></div>
-    <div class="summary-card"><div class="label">Total games</div><div class="value">${totalGames.toLocaleString()}</div></div>
+    <div class="summary-card"><div class="label">Total played</div><div class="value">${totalGames.toLocaleString()}</div></div>
     <div class="summary-card"><div class="label">Overall win rate</div><div class="value">${(wr*100).toFixed(1)}%</div></div>
     <div class="summary-card"><div class="label">Buff rating ≥ 5</div><div class="value" style="color:var(--buff)">${strongBuff}</div></div>
     <div class="summary-card"><div class="label">Ovr rating ≥ 8</div><div class="value" style="color:var(--nerf)">${strongOvr}</div></div>
@@ -375,8 +375,8 @@ function exportCSV() {
     COLS.map((c) => {
       let v = r[c.key];
       if (typeof v === "number") {
-        if (c.key === "winRate" || c.key === "pctPlayed") v = (v * 100).toFixed(3);
-        else if (c.key === "buffRating" || c.key === "ovrRating" || c.key === "winRate2") v = v.toFixed(4);
+        if (c.key === "winRate" || c.key === "pctPlayed" || c.key === "winRate2") v = (v * 100).toFixed(3);
+        else if (c.key === "buffRating" || c.key === "ovrRating") v = v.toFixed(4);
       }
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -423,7 +423,7 @@ function runAnalysis() {
 
   setStatus(
     `Parsed ${winsRows.length} win rows, ${lossesRows.length} loss rows. ` +
-    `Overall WR: ${(constants.overallWinRate*100).toFixed(1)}%, median games: ${constants.medianTotal}.`,
+    `Overall WR: ${(constants.overallWinRate*100).toFixed(1)}%, median total played: ${constants.medianTotal}.`,
     "ok"
   );
 

@@ -20,9 +20,9 @@ Per card, joined against the master list of 199 cards (`cards.json`):
 
 | Column | Meaning |
 |---|---|
-| `Wins`, `Losses`, `Games` | From your pasted data |
+| `Wins`, `Losses`, `Total Played` | From your pasted data |
 | `Win %` | Raw win rate |
-| `Norm WR` | Win rate normalized so `1.0` = overall average (`win_rate * 0.5 / overall_win_rate`) |
+| `Norm WR` | Win rate normalized so `100%` = the overall average (`win_rate * 0.5 / overall_win_rate`, displayed as a percentage) |
 | `% Play` | This card's share of all games played |
 | **`Buff Rating`** | Higher → stronger buff/rework candidate. Composite of two penalties: low play count vs. median (up to 7 pts) + low normalized win rate (up to 3 pts) |
 | **`Ovr Rating`** | Higher → stronger card. Based on a sqrt-shrunk adjusted win rate, rescaled |
@@ -31,7 +31,7 @@ The **Buff Rating** and **Ovr Rating** formulas match those in the source spread
 
 ### Decision guide
 
-- **Buff candidates** — high `Buff Rating` driven mostly by *low win rate* (check `Norm WR < 0.5`)
+- **Buff candidates** — high `Buff Rating` driven mostly by *low win rate* (check `Norm WR < 50%`)
 - **Rework candidates** — high `Buff Rating` driven mostly by *low play count* (under-played, players aren't engaging)
 - **Nerf candidates** — high `Ovr Rating` with meaningful sample size
 
