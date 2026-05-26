@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local data / exports
+*.local.csv
+balance-changes.csv
+
+# Config with secrets
+config.yaml

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Balance Change Tool</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Balance Change Tool</h1>
+    <p class="subtitle">
+      Paste or upload card win/loss data to identify candidates for
+      <span class="tag tag-buff">buffs</span>,
+      <span class="tag tag-nerf">nerfs</span>, and
+      <span class="tag tag-rework">reworks</span>.
+    </p>
+  </header>
+
+  <main>
+    <section class="panel" id="input-panel">
+      <h2>1. Input data</h2>
+      <p class="help">
+        Expected columns (CSV or TSV, header row required):
+        <code>card, wins, losses</code>.
+        Extra columns are kept and shown as additional table columns.
+      </p>
+
+      <div class="input-controls">
+        <label class="file-label">
+          <input type="file" id="file-input" accept=".csv,.tsv,.txt" />
+          <span>Upload CSV/TSV</span>
+        </label>
+        <button id="load-sample-btn" type="button">Load sample data</button>
+        <button id="clear-btn" type="button">Clear</button>
+      </div>
+
+      <textarea
+        id="data-input"
+        placeholder="card,wins,losses&#10;Fireball,120,80&#10;Healing Potion,45,55&#10;..."
+        spellcheck="false"
+      ></textarea>
+
+      <button id="parse-btn" type="button" class="primary">Analyze</button>
+      <div id="parse-status" class="status"></div>
+    </section>
+
+    <section class="panel" id="settings-panel">
+      <h2>2. Thresholds</h2>
+      <p class="help">
+        Cards are categorized based on win rate and total games played.
+        Adjust the thresholds to match your balance philosophy.
+      </p>
+      <div class="settings-grid">
+        <label>
+          Buff candidate (win rate &lt;)
+          <input type="number" id="buff-threshold" value="45" min="0" max="100" step="0.5" />
+          <span class="unit">%</span>
+        </label>
+        <label>
+          Nerf candidate (win rate &gt;)
+          <input type="number" id="nerf-threshold" value="55" min="0" max="100" step="0.5" />
+          <span class="unit">%</span>
+        </label>
+        <label>
+          Rework candidate (total games &lt;)
+          <input type="number" id="rework-threshold" value="50" min="0" step="1" />
+          <span class="unit">games</span>
+        </label>
+        <label>
+          Minimum games to evaluate
+          <input type="number" id="min-games" value="10" min="0" step="1" />
+          <span class="unit">games</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" id="results-panel" hidden>
+      <h2>3. Results</h2>
+
+      <div class="summary" id="summary"></div>
+
+      <div class="filters">
+        <input type="search" id="search-input" placeholder="Search card name..." />
+        <div class="status-filters" id="status-filters">
+          <label><input type="checkbox" value="Buff" checked /> <span class="tag tag-buff">Buff</span></label>
+          <label><input type="checkbox" value="Nerf" checked /> <span class="tag tag-nerf">Nerf</span></label>
+          <label><input type="checkbox" value="Rework" checked /> <span class="tag tag-rework">Rework</span></label>
+          <label><input type="checkbox" value="OK" checked /> <span class="tag tag-ok">OK</span></label>
+        </div>
+        <button id="export-btn" type="button">Export filtered CSV</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Balance Change Tool · <a href="https://github.com/" id="repo-link">repository</a></p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
