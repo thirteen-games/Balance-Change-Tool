@@ -10,85 +10,72 @@
   <header>
     <h1>Balance Change Tool</h1>
     <p class="subtitle">
-      Paste or upload card win/loss data to identify candidates for
-      <span class="tag tag-buff">buffs</span>,
-      <span class="tag tag-nerf">nerfs</span>, and
-      <span class="tag tag-rework">reworks</span>.
+      Paste win and loss counts from your SQL query. The tool joins them against the
+      master card list (199 cards), then computes a <strong>Buff/Rework rating</strong>
+      and an <strong>Overall rating</strong> for each card.
     </p>
   </header>
 
   <main>
     <section class="panel" id="input-panel">
-      <h2>1. Input data</h2>
+      <h2>1. Paste data</h2>
       <p class="help">
-        Expected columns (CSV or TSV, header row required):
-        <code>card, wins, losses</code>.
-        Extra columns are kept and shown as additional table columns.
+        Each line is <code>card name</code> followed by a number, separated by tab,
+        comma, pipe, or multiple spaces. Headers are auto-stripped.
+        Names are matched case-insensitively against the master list.
       </p>
 
-      <div class="input-controls">
-        <label class="file-label">
-          <input type="file" id="file-input" accept=".csv,.tsv,.txt" />
-          <span>Upload CSV/TSV</span>
-        </label>
-        <button id="load-sample-btn" type="button">Load sample data</button>
+      <div class="paste-grid">
+        <div>
+          <label for="wins-input">Wins by card</label>
+          <textarea id="wins-input" spellcheck="false" placeholder="Air Attack&#9;293&#10;Armory&#9;152&#10;..."></textarea>
+        </div>
+        <div>
+          <label for="losses-input">Losses by card</label>
+          <textarea id="losses-input" spellcheck="false" placeholder="Air Attack&#9;129&#10;Armory&#9;84&#10;..."></textarea>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="analyze-btn" type="button" class="primary">Analyze</button>
+        <button id="sample-btn" type="button">Load sample data</button>
         <button id="clear-btn" type="button">Clear</button>
+        <span id="parse-status" class="status"></span>
       </div>
 
-      <textarea
-        id="data-input"
-        placeholder="card,wins,losses&#10;Fireball,120,80&#10;Healing Potion,45,55&#10;..."
-        spellcheck="false"
-      ></textarea>
-
-      <button id="parse-btn" type="button" class="primary">Analyze</button>
-      <div id="parse-status" class="status"></div>
-    </section>
-
-    <section class="panel" id="settings-panel">
-      <h2>2. Thresholds</h2>
-      <p class="help">
-        Cards are categorized based on win rate and total games played.
-        Adjust the thresholds to match your balance philosophy.
-      </p>
-      <div class="settings-grid">
-        <label>
-          Buff candidate (win rate &lt;)
-          <input type="number" id="buff-threshold" value="45" min="0" max="100" step="0.5" />
-          <span class="unit">%</span>
-        </label>
-        <label>
-          Nerf candidate (win rate &gt;)
-          <input type="number" id="nerf-threshold" value="55" min="0" max="100" step="0.5" />
-          <span class="unit">%</span>
-        </label>
-        <label>
-          Rework candidate (total games &lt;)
-          <input type="number" id="rework-threshold" value="50" min="0" step="1" />
-          <span class="unit">games</span>
-        </label>
-        <label>
-          Minimum games to evaluate
-          <input type="number" id="min-games" value="10" min="0" step="1" />
-          <span class="unit">games</span>
-        </label>
-      </div>
+      <details id="diagnostics" hidden>
+        <summary>Diagnostics</summary>
+        <div id="diagnostics-body"></div>
+      </details>
     </section>
 
     <section class="panel" id="results-panel" hidden>
-      <h2>3. Results</h2>
+      <h2>2. Results</h2>
 
       <div class="summary" id="summary"></div>
 
       <div class="filters">
         <input type="search" id="search-input" placeholder="Search card name..." />
-        <div class="status-filters" id="status-filters">
-          <label><input type="checkbox" value="Buff" checked /> <span class="tag tag-buff">Buff</span></label>
-          <label><input type="checkbox" value="Nerf" checked /> <span class="tag tag-nerf">Nerf</span></label>
-          <label><input type="checkbox" value="Rework" checked /> <span class="tag tag-rework">Rework</span></label>
-          <label><input type="checkbox" value="OK" checked /> <span class="tag tag-ok">OK</span></label>
+        <div class="filter-group">
+          <span class="filter-label">Class</span>
+          <div id="class-filters" class="filter-chips"></div>
         </div>
-        <button id="export-btn" type="button">Export filtered CSV</button>
+        <div class="filter-group">
+          <span class="filter-label">Type</span>
+          <div id="type-filters" class="filter-chips"></div>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Cost</span>
+          <div id="cost-filters" class="filter-chips"></div>
+        </div>
+        <div class="filter-group">
+          <label class="checkbox-row">
+            <input type="checkbox" id="hide-zero-plays" />
+            <span>Hide cards with 0 plays</span>
+          </label>
+        </div>
+        <div class="filter-spacer"></div>
+        <button id="export-btn" type="button">Export CSV</button>
       </div>
 
       <div class="table-wrap">
@@ -97,6 +84,7 @@
           <tbody></tbody>
         </table>
       </div>
+      <p class="help" id="row-count"></p>
     </section>
   </main>
 

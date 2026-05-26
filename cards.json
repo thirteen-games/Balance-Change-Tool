@@ -1,0 +1,1196 @@
+[
+  {
+    "name": "Air Attack",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Antivirus",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Armory",
+    "class": "Boom",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Arson",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 5
+  },
+  {
+    "name": "Attractor",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Bandit",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Barber",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Beebie",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Biocontrol",
+    "class": "Floral",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Blazer",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Block Party",
+    "class": "Moxie",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Bloom Cat",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Bloom King",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Bloom Kitten",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Bloom Queen",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Bloomer",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Bloomicite",
+    "class": "Floral",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Bloomify",
+    "class": "Floral",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Bloomseed",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Bloomshine",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Bloomshooter",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Bomber",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Bounce Pad",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Bowa",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Brainiac",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Brainstorm",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Branehart",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Breach",
+    "class": "Cyber",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Bruiser",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Campfire",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Cannon",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Cannonball",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Chain Reaction",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Chaos Theory",
+    "class": "Distortion",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Contamination",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Corruptor",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Cosmicosi",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Crossbow",
+    "class": "Boom",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Crusher",
+    "class": "Moxie",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Cursed Cannon",
+    "class": "Boom",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Day Of Rest",
+    "class": "Distortion",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "DC",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Destroyer",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Direct Hit",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Disintegrate",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Disruptor",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Disturbance",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Double Dip",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Double Trouble",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Dreamkiller",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Dynamo",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Ecko",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "EMP",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Encore",
+    "class": "Magic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Escape Pod",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Eviction",
+    "class": "Moxie",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Executioner",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Explosion",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 5
+  },
+  {
+    "name": "Favoritism",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Felena",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Fertilizer",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Fil",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Firecracker",
+    "class": "Boom",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Firewall",
+    "class": "Cyber",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Flash",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Flutter",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Flytrap",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Gemma",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Generator",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Germinate",
+    "class": "Floral",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Get Out!",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Giving Tree",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Glitchi",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Glow Up",
+    "class": "Magic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Gooplicate",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Grenado",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Growth Spray",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Hackmaster",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Harmonize",
+    "class": "Magic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "High Roller",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "High Voltage",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 5
+  },
+  {
+    "name": "Hyperdrive",
+    "class": "Cosmic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Iceman",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Infinite Wisdom",
+    "class": "Cosmic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Interference",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Ionic Blast",
+    "class": "Energy",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "IP",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Jazzy",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Joe",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Joe Clone",
+    "class": "Moxie",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Jolt",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Khrys",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Laser Beam",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Lightning Storm",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Lightspeed",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Lockdown",
+    "class": "Moxie",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Low Voltage",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Makeover",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Malware",
+    "class": "Cyber",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Mega Hack",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 5
+  },
+  {
+    "name": "Mega Joe",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Megabomb",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Megamorph",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Melder",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Mezzagrowth",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Mindwave",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Minerva",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Mini Boost",
+    "class": "Energy",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Miniswipe",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Mopheous",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Mystify",
+    "class": "Magic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Negatron",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Nightswipe",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Obstructor",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Ocean's Fury",
+    "class": "Boom",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Oddball",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "One Cent",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Overboard",
+    "class": "Boom",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Overcharge",
+    "class": "Energy",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Overheater",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Papercut",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Pearle",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Piggy Bank",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Pizza Party",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Pollination",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Prepare",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Qadara",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Rachelle",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Rat-A-Baby",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Rat-A-Pult",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Rat-A-Tack",
+    "class": "Moxie",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Ray",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Reaper",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Reboot",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Recharge",
+    "class": "Energy",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Regan",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Remover",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Rerun",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Restore",
+    "class": "Cyber",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Rootquake",
+    "class": "Floral",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Rover",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Sarge",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Sawblade",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Scifon",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Seed Packet",
+    "class": "Floral",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Seedlet",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Shrink",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Sideswipe",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Simulstasis",
+    "class": "Distortion",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Singularity",
+    "class": "Distortion",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Sizzle",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Slicer",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Slingshot",
+    "class": "Boom",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Snakedini",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Snakeskin",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Snapper",
+    "class": "Boom",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Sparki",
+    "class": "Cyber",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Spear Attack",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Spell Ya Later",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Spelzz",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Spike",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Splitter",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Splyt",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Sprynk",
+    "class": "Magic",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Strategic Shift",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 2
+  },
+  {
+    "name": "Subwoofer",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Super Bloom",
+    "class": "Floral",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Super Boost",
+    "class": "Energy",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Super Direct",
+    "class": "Energy",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Super Hack",
+    "class": "Cyber",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Super Surge",
+    "class": "Energy",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Super Zap",
+    "class": "Cosmic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Superposition",
+    "class": "Distortion",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Swap",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Swipe Madness",
+    "class": "Cyber",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Telepath",
+    "class": "Cosmic",
+    "type": "Friend",
+    "cost": 4
+  },
+  {
+    "name": "Temporal Lock",
+    "class": "Distortion",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Terminate",
+    "class": "Cyber",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Territorial",
+    "class": "Moxie",
+    "type": "Power",
+    "cost": 6
+  },
+  {
+    "name": "The Cosmos",
+    "class": "Cosmic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "The Muscle",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "The Scroll",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 5
+  },
+  {
+    "name": "THE Spell",
+    "class": "Magic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Time Delay",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Time Guru",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Time Loop",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Time Trooper",
+    "class": "Distortion",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Titan",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Transporter",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 1
+  },
+  {
+    "name": "Trasher",
+    "class": "Moxie",
+    "type": "Friend",
+    "cost": 5
+  },
+  {
+    "name": "Twinning",
+    "class": "Magic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Unicoin",
+    "class": "Cosmic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Universal",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 4
+  },
+  {
+    "name": "Venomous",
+    "class": "Magic",
+    "type": "Power",
+    "cost": 3
+  },
+  {
+    "name": "Volata",
+    "class": "Energy",
+    "type": "Friend",
+    "cost": 3
+  },
+  {
+    "name": "Waterer",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 1
+  },
+  {
+    "name": "Weade",
+    "class": "Floral",
+    "type": "Friend",
+    "cost": 2
+  },
+  {
+    "name": "Wormhole",
+    "class": "Cosmic",
+    "type": "Superpower",
+    "cost": 1
+  },
+  {
+    "name": "Zapling Gun",
+    "class": "Cosmic",
+    "type": "Power",
+    "cost": 2
+  }
+]

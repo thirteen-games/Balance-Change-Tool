@@ -1,195 +1,225 @@
 "use strict";
 
-// ---------- State ----------
+// ============================================================
+// Balance Change Tool — replicates the calculations from
+// "PVE 600 ranked April26.xlsx" / sheet "win rates in ranked since bruis"
+//
+// Formula chain (per card, when wins W and losses L are pasted):
+//   total       = W + L
+//   winRate     = W / total
+//   F1          = sum(W) / sum(total)                                 // overall win rate
+//   winRate2    = winRate * 0.5 / F1                                  // normalized so 1.0 = average
+//   pctPlayed   = total / sum(total)
+//   H1          = median(total across all cards w/ data)
+//   buffRating  = (total < H1 ? sqrt(H1-total) * 7 / sqrt(H1) : 0)
+//                  + (winRate2 < 0.5 ? sqrt(0.5-winRate2) * 3 / sqrt(0.5) : 0)
+//   S1          = max(total)
+//   adjPlayed   = sqrt(total / S1) * S1            // sqrt shrinkage
+//   adjWins     = W + (adjPlayed - total) * 0.5    // pull toward 50% win rate
+//   R1          = sum(adjWins) / sum(adjPlayed)    // overall adjusted win rate
+//   ovrRating   = ((adjWins/adjPlayed) * 0.5 / R1 - 0.4) / 0.02
+// ============================================================
+
+const CARDS_URL = "cards.json";
+let MASTER_CARDS = []; // [{name, class, type, cost}]
+let MASTER_INDEX = new Map(); // lowercased name -> master card
 
 const state = {
-  rows: [],          // [{card, wins, losses, total, winRate, status, ...extras}]
-  extraColumns: [],  // any non-core columns from the input
-  sort: { key: "winRate", dir: "asc" },
+  results: [],            // analyzed rows
+  unmatchedWins: [],      // names in wins paste not in master
+  unmatchedLosses: [],    // names in losses paste not in master
+  unpastedCards: [],      // master cards with zero wins+losses
+  sort: { key: "buffRating", dir: "desc" },
   filters: {
     search: "",
-    statuses: new Set(["Buff", "Nerf", "Rework", "OK"]),
+    classes: new Set(),
+    types: new Set(),
+    costs: new Set(),
+    hideZero: false,
   },
 };
 
-// ---------- DOM ----------
-
-const $ = (sel) => document.querySelector(sel);
+// ------------------------------------------------------------
+// DOM
+// ------------------------------------------------------------
+const $ = (s) => document.querySelector(s);
 const els = {
-  fileInput: $("#file-input"),
-  loadSample: $("#load-sample-btn"),
+  wins: $("#wins-input"),
+  losses: $("#losses-input"),
+  analyze: $("#analyze-btn"),
+  sample: $("#sample-btn"),
   clear: $("#clear-btn"),
-  dataInput: $("#data-input"),
-  parse: $("#parse-btn"),
-  parseStatus: $("#parse-status"),
-  buffT: $("#buff-threshold"),
-  nerfT: $("#nerf-threshold"),
-  reworkT: $("#rework-threshold"),
-  minGames: $("#min-games"),
-  resultsPanel: $("#results-panel"),
+  status: $("#parse-status"),
+  diagnostics: $("#diagnostics"),
+  diagBody: $("#diagnostics-body"),
+  results: $("#results-panel"),
   summary: $("#summary"),
   search: $("#search-input"),
-  statusFilters: $("#status-filters"),
+  classFilters: $("#class-filters"),
+  typeFilters: $("#type-filters"),
+  costFilters: $("#cost-filters"),
+  hideZero: $("#hide-zero-plays"),
   export: $("#export-btn"),
   thead: document.querySelector("#results-table thead"),
   tbody: document.querySelector("#results-table tbody"),
+  rowCount: $("#row-count"),
 };
 
-// ---------- Sample data ----------
+// ------------------------------------------------------------
+// Parsing pasted SQL output
+// ------------------------------------------------------------
 
-const SAMPLE_DATA = `card,wins,losses,rarity
-Fireball,182,118,common
-Healing Potion,45,255,common
-Dragon Strike,310,90,rare
-Stone Wall,140,160,common
-Mystic Shield,8,4,epic
-Lightning Bolt,210,190,common
-Frost Nova,55,145,rare
-Goblin Raider,7,3,common
-Arcane Missile,205,195,common
-Time Warp,40,260,legendary
-Phoenix,290,110,legendary
-Slime,160,140,common
-Shadow Dagger,12,8,rare
-Earthquake,320,80,epic
-Whirlwind,180,220,common
-Vampire Bat,148,152,common
-Sun Priestess,275,125,rare
-Iron Golem,95,205,rare
-Wisp,4,2,common
-Tidal Surge,205,195,epic`;
-
-// ---------- Parsing ----------
-
-function detectDelimiter(text) {
-  const firstLine = text.split(/\r?\n/)[0] || "";
-  const counts = { ",": 0, "\t": 0, ";": 0 };
-  for (const ch of firstLine) if (ch in counts) counts[ch]++;
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0] || ",";
-}
-
-function parseCSV(text) {
-  const delim = detectDelimiter(text);
-  const lines = text.trim().split(/\r?\n/).filter((l) => l.trim() !== "");
-  if (lines.length < 2) throw new Error("Need a header row and at least one data row.");
-
-  const header = splitLine(lines[0], delim).map((h) => h.trim().toLowerCase());
-
-  const cardIdx = header.findIndex((h) => h === "card" || h === "name" || h === "card name");
-  const winsIdx = header.findIndex((h) => h === "wins" || h === "w");
-  const lossesIdx = header.findIndex((h) => h === "losses" || h === "l");
-  if (cardIdx === -1) throw new Error("Missing 'card' column.");
-  if (winsIdx === -1) throw new Error("Missing 'wins' column.");
-  if (lossesIdx === -1) throw new Error("Missing 'losses' column.");
-
-  const extraIdxs = header
-    .map((h, i) => (i === cardIdx || i === winsIdx || i === lossesIdx ? null : i))
-    .filter((i) => i !== null);
-  const extraColumns = extraIdxs.map((i) => header[i]);
-
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = splitLine(lines[i], delim);
-    const card = (cells[cardIdx] ?? "").trim();
-    if (!card) continue;
-    const wins = Number(cells[winsIdx]);
-    const losses = Number(cells[lossesIdx]);
-    if (!Number.isFinite(wins) || !Number.isFinite(losses)) {
-      throw new Error(`Row ${i + 1}: wins/losses must be numbers.`);
-    }
-    const row = { card, wins, losses };
-    extraIdxs.forEach((idx, k) => {
-      row[extraColumns[k]] = (cells[idx] ?? "").trim();
-    });
-    rows.push(row);
-  }
-  return { rows, extraColumns };
-}
-
-function splitLine(line, delim) {
-  // Simple split supporting quoted fields with embedded delimiters.
+/**
+ * Parse a paste block into [{name, count}, ...].
+ * Each line: card name + numeric count, separated by tab, comma, pipe,
+ * or 2+ spaces. Header lines (no number found) are skipped.
+ */
+function parsePaste(text) {
   const out = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (ch === delim && !inQuotes) {
-      out.push(cur); cur = "";
-    } else {
-      cur += ch;
+  const lines = text.split(/\r?\n/);
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    // strip SQL client divider rows like "----+----"
+    if (/^[-+=|\s]+$/.test(line)) continue;
+
+    // Try splitting on tab, then pipe, then comma, then 2+ spaces.
+    let parts;
+    if (line.includes("\t")) parts = line.split("\t");
+    else if (line.includes("|")) parts = line.split("|");
+    else if (line.includes(",")) parts = line.split(",");
+    else parts = line.split(/\s{2,}/);
+
+    parts = parts.map((p) => p.trim()).filter((p) => p !== "");
+    if (parts.length < 2) {
+      // fall back to "last whitespace token" split
+      const m = line.match(/^(.+?)\s+(\d[\d,]*)$/);
+      if (m) parts = [m[1].trim(), m[2]];
+      else continue;
     }
+
+    // Identify the numeric column (usually last)
+    const last = parts[parts.length - 1].replace(/,/g, "");
+    const n = Number(last);
+    if (!Number.isFinite(n)) continue; // skip header rows etc.
+
+    const name = parts.slice(0, -1).join(" ").trim();
+    if (!name) continue;
+    out.push({ name, count: n });
   }
-  out.push(cur);
   return out;
 }
 
-// ---------- Analysis ----------
-
-function analyze(rows) {
-  const buffT = Number(els.buffT.value);
-  const nerfT = Number(els.nerfT.value);
-  const reworkT = Number(els.reworkT.value);
-  const minGames = Number(els.minGames.value);
-
-  return rows.map((r) => {
-    const total = r.wins + r.losses;
-    const winRate = total > 0 ? (r.wins / total) * 100 : 0;
-    let status = "OK";
-    if (total < minGames) {
-      status = "—"; // not enough data
-    } else if (total < reworkT) {
-      status = "Rework";
-    } else if (winRate < buffT) {
-      status = "Buff";
-    } else if (winRate > nerfT) {
-      status = "Nerf";
-    }
-    return { ...r, total, winRate, status };
-  });
+function buildCountMap(rows) {
+  const m = new Map();
+  for (const r of rows) {
+    const k = r.name.toLowerCase();
+    m.set(k, (m.get(k) || 0) + r.count);
+  }
+  return m;
 }
 
-// ---------- Render ----------
+// ------------------------------------------------------------
+// Analysis (replicates the spreadsheet formulas)
+// ------------------------------------------------------------
 
-const CORE_COLUMNS = [
-  { key: "card", label: "Card", type: "string" },
-  { key: "wins", label: "Wins", type: "number" },
-  { key: "losses", label: "Losses", type: "number" },
-  { key: "total", label: "Games", type: "number" },
-  { key: "winRate", label: "Win Rate", type: "number", fmt: (v) => v.toFixed(1) + "%" },
-  { key: "status", label: "Status", type: "string", fmt: renderStatusTag },
+function median(arr) {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function analyze(winsMap, lossesMap) {
+  // 1. Join pasted counts to master list
+  const joined = MASTER_CARDS.map((card) => {
+    const k = card.name.toLowerCase();
+    const wins = winsMap.get(k) || 0;
+    const losses = lossesMap.get(k) || 0;
+    const total = wins + losses;
+    return { ...card, wins, losses, total };
+  });
+
+  // 2. Constants — only consider cards with any plays for medians/sums
+  const withPlays = joined.filter((r) => r.total > 0);
+  const sumWins = withPlays.reduce((a, r) => a + r.wins, 0);
+  const sumTotal = withPlays.reduce((a, r) => a + r.total, 0);
+  const overallWinRate = sumTotal > 0 ? sumWins / sumTotal : 0.5;      // F1
+  const medianTotal = median(withPlays.map((r) => r.total));           // H1
+  const maxTotal = withPlays.reduce((a, r) => Math.max(a, r.total), 0);// S1
+
+  // 3. First pass: per-card win rate, normalized, % played, buff rating, adj wins/played
+  const pass1 = joined.map((r) => {
+    const winRate = r.total > 0 ? r.wins / r.total : 0;
+    const winRate2 = overallWinRate > 0 ? (winRate * 0.5) / overallWinRate : 0;
+    const pctPlayed = sumTotal > 0 ? r.total / sumTotal : 0;
+
+    let buffRating = 0;
+    if (medianTotal > r.total) {
+      buffRating += (Math.sqrt(medianTotal - r.total) * 7) / Math.sqrt(medianTotal);
+    }
+    if (winRate2 < 0.5) {
+      buffRating += (Math.sqrt(0.5 - winRate2) * 3) / Math.sqrt(0.5);
+    }
+
+    const adjPlayed = maxTotal > 0 ? Math.sqrt(r.total / maxTotal) * maxTotal : 0;
+    const adjWins = r.wins + (adjPlayed - r.total) * 0.5;
+
+    return { ...r, winRate, winRate2, pctPlayed, buffRating, adjPlayed, adjWins };
+  });
+
+  // 4. Overall adjusted win rate (R1) uses adj sums across all cards
+  const sumAdjWins = pass1.reduce((a, r) => a + r.adjWins, 0);
+  const sumAdjPlayed = pass1.reduce((a, r) => a + r.adjPlayed, 0);
+  const overallAdjWR = sumAdjPlayed > 0 ? sumAdjWins / sumAdjPlayed : 0.5;
+
+  // 5. Second pass: overall rating
+  const final = pass1.map((r) => {
+    const adjWinRate = r.adjPlayed > 0 ? r.adjWins / r.adjPlayed : 0;
+    const ovrRating = overallAdjWR > 0
+      ? (adjWinRate * 0.5 / overallAdjWR - 0.4) / 0.02
+      : 0;
+    return { ...r, adjWinRate, ovrRating };
+  });
+
+  return {
+    rows: final,
+    constants: { overallWinRate, medianTotal, maxTotal, overallAdjWR, sumWins, sumTotal, sumLosses: sumTotal - sumWins },
+  };
+}
+
+// ------------------------------------------------------------
+// Rendering
+// ------------------------------------------------------------
+
+const COLS = [
+  { key: "name",       label: "Card",        type: "string", render: (r) => `<span class="card-name">${esc(r.name)}</span>` },
+  { key: "class",      label: "Class",       type: "string", render: (r) => `<span class="class-pill class-${r.class}">${r.class}</span>` },
+  { key: "type",       label: "Type",        type: "string", render: (r) => `<span class="type-${r.type}">${r.type}</span>` },
+  { key: "cost",       label: "Cost",        type: "number", numeric: true, render: (r) => r.cost ?? "" },
+  { key: "wins",       label: "Wins",        type: "number", numeric: true },
+  { key: "losses",     label: "Losses",      type: "number", numeric: true },
+  { key: "total",      label: "Games",       type: "number", numeric: true },
+  { key: "winRate",    label: "Win %",       type: "number", numeric: true, fmt: (v) => v ? (v * 100).toFixed(1) + "%" : "—" },
+  { key: "winRate2",   label: "Norm WR",     type: "number", numeric: true, fmt: (v) => v ? v.toFixed(3) : "—" },
+  { key: "pctPlayed",  label: "% Play",      type: "number", numeric: true, fmt: (v) => v ? (v * 100).toFixed(2) + "%" : "—" },
+  { key: "buffRating", label: "Buff Rating", type: "number", numeric: true, bar: "buff",   fmt: (v) => v.toFixed(2), max: 10 },
+  { key: "ovrRating",  label: "Ovr Rating",  type: "number", numeric: true, bar: "nerf",   fmt: (v) => v.toFixed(2), max: 20 },
 ];
 
-function renderStatusTag(s) {
-  const cls = {
-    Buff: "tag tag-buff",
-    Nerf: "tag tag-nerf",
-    Rework: "tag tag-rework",
-    OK: "tag tag-ok",
-    "—": "tag tag-ok",
-  }[s] || "tag tag-ok";
-  return `<span class="${cls}">${s}</span>`;
-}
-
-function getColumns() {
-  return [
-    ...CORE_COLUMNS,
-    ...state.extraColumns.map((k) => ({ key: k, label: k, type: "string" })),
-  ];
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
 }
 
 function renderTable() {
-  const cols = getColumns();
-
   // Header
   els.thead.innerHTML = "";
   const tr = document.createElement("tr");
-  cols.forEach((c) => {
+  COLS.forEach((c) => {
     const th = document.createElement("th");
     th.textContent = c.label;
     th.dataset.key = c.key;
+    if (c.numeric) th.classList.add("numeric");
     if (state.sort.key === c.key) {
       th.classList.add(state.sort.dir === "asc" ? "sort-asc" : "sort-desc");
     }
@@ -207,21 +237,27 @@ function renderTable() {
   els.thead.appendChild(tr);
 
   // Body
-  const filtered = applyFilters(state.rows);
-  const sorted = sortRows(filtered, state.sort.key, state.sort.dir);
-
+  const rows = sortRows(applyFilters(state.results));
   els.tbody.innerHTML = "";
-  for (const row of sorted) {
+  for (const r of rows) {
     const tr = document.createElement("tr");
-    cols.forEach((c) => {
+    for (const c of COLS) {
       const td = document.createElement("td");
-      const val = row[c.key];
-      if (c.fmt) td.innerHTML = c.fmt(val);
-      else td.textContent = val ?? "";
+      if (c.numeric) td.classList.add("numeric");
+      const v = r[c.key];
+      const display = c.render ? c.render(r) : (c.fmt ? c.fmt(v) : (v ?? ""));
+      if (c.bar && typeof v === "number" && v > 0) {
+        const pct = Math.min(100, (v / c.max) * 100);
+        td.classList.add("bar-cell");
+        td.innerHTML = `<span class="bar ${c.bar}" style="width:${pct}%"></span><span class="val">${display}</span>`;
+      } else {
+        td.innerHTML = display;
+      }
       tr.appendChild(td);
-    });
+    }
     els.tbody.appendChild(tr);
   }
+  els.rowCount.textContent = `Showing ${rows.length} of ${state.results.length} cards`;
 
   renderSummary();
 }
@@ -229,52 +265,124 @@ function renderTable() {
 function applyFilters(rows) {
   const q = state.filters.search.trim().toLowerCase();
   return rows.filter((r) => {
-    if (!state.filters.statuses.has(r.status) && r.status !== "—") return false;
-    if (r.status === "—" && !state.filters.statuses.has("OK")) return false;
-    if (q && !String(r.card).toLowerCase().includes(q)) return false;
+    if (q && !r.name.toLowerCase().includes(q)) return false;
+    if (state.filters.classes.size && !state.filters.classes.has(r.class)) return false;
+    if (state.filters.types.size && !state.filters.types.has(r.type)) return false;
+    if (state.filters.costs.size && !state.filters.costs.has(String(r.cost))) return false;
+    if (state.filters.hideZero && r.total === 0) return false;
     return true;
   });
 }
 
-function sortRows(rows, key, dir) {
-  const col = getColumns().find((c) => c.key === key);
+function sortRows(rows) {
+  const col = COLS.find((c) => c.key === state.sort.key);
   const isNum = col && col.type === "number";
-  const sign = dir === "asc" ? 1 : -1;
+  const sign = state.sort.dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
-    const av = a[key], bv = b[key];
+    const av = a[state.sort.key], bv = b[state.sort.key];
     if (isNum) return ((Number(av) || 0) - (Number(bv) || 0)) * sign;
     return String(av ?? "").localeCompare(String(bv ?? "")) * sign;
   });
 }
 
 function renderSummary() {
-  const counts = { Buff: 0, Nerf: 0, Rework: 0, OK: 0, "—": 0 };
-  for (const r of state.rows) counts[r.status] = (counts[r.status] || 0) + 1;
+  const visible = applyFilters(state.results);
+  const totalCards = state.results.filter((r) => r.total > 0).length;
+  const totalGames = state.results.reduce((a, r) => a + r.total, 0);
+  const wr = totalGames ? state.results.reduce((a, r) => a + r.wins, 0) / totalGames : 0;
+
+  // Heuristic buckets (purely visual — user picks via sort/filter)
+  const strongBuff = state.results.filter((r) => r.total > 0 && r.buffRating >= 5).length;
+  const lowSample = state.results.filter((r) => r.total > 0 && r.total < 30).length;
+  const strongOvr = state.results.filter((r) => r.ovrRating >= 8).length;
+  const noData = state.results.filter((r) => r.total === 0).length;
+
   els.summary.innerHTML = `
-    <div class="summary-card"><div class="label">Total cards</div><div class="value">${state.rows.length}</div></div>
-    <div class="summary-card"><div class="label">Buff candidates</div><div class="value" style="color:var(--buff)">${counts.Buff}</div></div>
-    <div class="summary-card"><div class="label">Nerf candidates</div><div class="value" style="color:var(--nerf)">${counts.Nerf}</div></div>
-    <div class="summary-card"><div class="label">Rework candidates</div><div class="value" style="color:var(--rework)">${counts.Rework}</div></div>
-    <div class="summary-card"><div class="label">Not enough data</div><div class="value" style="color:var(--muted)">${counts["—"]}</div></div>
+    <div class="summary-card"><div class="label">Cards w/ data</div><div class="value">${totalCards}</div></div>
+    <div class="summary-card"><div class="label">Total games</div><div class="value">${totalGames.toLocaleString()}</div></div>
+    <div class="summary-card"><div class="label">Overall win rate</div><div class="value">${(wr*100).toFixed(1)}%</div></div>
+    <div class="summary-card"><div class="label">Buff rating ≥ 5</div><div class="value" style="color:var(--buff)">${strongBuff}</div></div>
+    <div class="summary-card"><div class="label">Ovr rating ≥ 8</div><div class="value" style="color:var(--nerf)">${strongOvr}</div></div>
+    <div class="summary-card"><div class="label">Low sample (&lt;30)</div><div class="value" style="color:var(--rework)">${lowSample}</div></div>
+    <div class="summary-card"><div class="label">No data</div><div class="value" style="color:var(--muted)">${noData}</div></div>
   `;
 }
 
-// ---------- Export ----------
+// ------------------------------------------------------------
+// Filter chips
+// ------------------------------------------------------------
+
+function buildFilterChips() {
+  const classes = [...new Set(MASTER_CARDS.map((c) => c.class))].sort();
+  const types   = [...new Set(MASTER_CARDS.map((c) => c.type))].sort();
+  const costs   = [...new Set(MASTER_CARDS.map((c) => c.cost))].sort((a,b)=>a-b);
+
+  fillChips(els.classFilters, classes, state.filters.classes, (v) => `chip class-${v}`);
+  fillChips(els.typeFilters,  types,   state.filters.types,   () => `chip`);
+  fillChips(els.costFilters,  costs.map(String), state.filters.costs, () => `chip`);
+}
+
+function fillChips(container, values, set, classFn) {
+  container.innerHTML = "";
+  for (const v of values) {
+    const chip = document.createElement("span");
+    chip.className = classFn(v);
+    chip.textContent = v;
+    chip.dataset.value = v;
+    chip.addEventListener("click", () => {
+      if (set.has(v)) set.delete(v);
+      else set.add(v);
+      chip.classList.toggle("active");
+      renderTable();
+    });
+    container.appendChild(chip);
+  }
+}
+
+// ------------------------------------------------------------
+// Diagnostics
+// ------------------------------------------------------------
+
+function renderDiagnostics() {
+  const parts = [];
+  if (state.unmatchedWins.length || state.unmatchedLosses.length) {
+    parts.push(`<p><strong>Names not in master list</strong> (typo or new card?):</p>`);
+    if (state.unmatchedWins.length) {
+      parts.push(`<p>From wins:</p><ul>${state.unmatchedWins.map((n) => `<li><code>${esc(n)}</code></li>`).join("")}</ul>`);
+    }
+    if (state.unmatchedLosses.length) {
+      parts.push(`<p>From losses:</p><ul>${state.unmatchedLosses.map((n) => `<li><code>${esc(n)}</code></li>`).join("")}</ul>`);
+    }
+  }
+  if (state.unpastedCards.length) {
+    parts.push(`<p><strong>${state.unpastedCards.length} master cards with no plays in pasted data.</strong> First 10: ${state.unpastedCards.slice(0,10).map((n) => `<code>${esc(n)}</code>`).join(", ")}${state.unpastedCards.length > 10 ? ", ..." : ""}</p>`);
+  }
+  if (parts.length === 0) {
+    parts.push(`<p>All pasted names matched the master list. Every card has play data.</p>`);
+  }
+  els.diagBody.innerHTML = parts.join("");
+  els.diagnostics.hidden = false;
+}
+
+// ------------------------------------------------------------
+// Export
+// ------------------------------------------------------------
 
 function exportCSV() {
-  const cols = getColumns();
-  const filtered = applyFilters(state.rows);
-  const sorted = sortRows(filtered, state.sort.key, state.sort.dir);
-  const header = cols.map((c) => c.label).join(",");
-  const lines = sorted.map((r) =>
-    cols.map((c) => {
+  const rows = sortRows(applyFilters(state.results));
+  const header = COLS.map((c) => c.label).join(",");
+  const body = rows.map((r) =>
+    COLS.map((c) => {
       let v = r[c.key];
-      if (c.key === "winRate" && typeof v === "number") v = v.toFixed(2);
+      if (typeof v === "number") {
+        if (c.key === "winRate" || c.key === "pctPlayed") v = (v * 100).toFixed(3);
+        else if (c.key === "buffRating" || c.key === "ovrRating" || c.key === "winRate2") v = v.toFixed(4);
+      }
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(",")
   );
-  const blob = new Blob([header + "\n" + lines.join("\n")], { type: "text/csv" });
+  const blob = new Blob([header + "\n" + body.join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -283,83 +391,130 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-// ---------- Events ----------
+// ------------------------------------------------------------
+// Wire up
+// ------------------------------------------------------------
 
 function runAnalysis() {
-  const text = els.dataInput.value;
-  if (!text.trim()) {
-    setStatus("Paste data or upload a file first.", "error");
+  const winsRows = parsePaste(els.wins.value);
+  const lossesRows = parsePaste(els.losses.value);
+  if (winsRows.length === 0 && lossesRows.length === 0) {
+    setStatus("Paste some wins or losses data first.", "error");
     return;
   }
-  try {
-    const { rows, extraColumns } = parseCSV(text);
-    state.extraColumns = extraColumns;
-    state.rows = analyze(rows);
-    setStatus(`Parsed ${rows.length} cards.`, "ok");
-    els.resultsPanel.hidden = false;
-    renderTable();
-  } catch (e) {
-    setStatus(e.message, "error");
-  }
+
+  const winsMap = buildCountMap(winsRows);
+  const lossesMap = buildCountMap(lossesRows);
+
+  // Track unmatched names
+  state.unmatchedWins = winsRows.map((r) => r.name).filter((n) => !MASTER_INDEX.has(n.toLowerCase()));
+  state.unmatchedLosses = lossesRows.map((r) => r.name).filter((n) => !MASTER_INDEX.has(n.toLowerCase()));
+  // Dedupe (case-insensitive)
+  state.unmatchedWins = [...new Set(state.unmatchedWins.map((s) => s.toLowerCase()))].map((lc) =>
+    winsRows.find((r) => r.name.toLowerCase() === lc).name
+  );
+  state.unmatchedLosses = [...new Set(state.unmatchedLosses.map((s) => s.toLowerCase()))].map((lc) =>
+    lossesRows.find((r) => r.name.toLowerCase() === lc).name
+  );
+
+  const { rows, constants } = analyze(winsMap, lossesMap);
+  state.results = rows;
+  state.unpastedCards = rows.filter((r) => r.total === 0).map((r) => r.name);
+
+  setStatus(
+    `Parsed ${winsRows.length} win rows, ${lossesRows.length} loss rows. ` +
+    `Overall WR: ${(constants.overallWinRate*100).toFixed(1)}%, median games: ${constants.medianTotal}.`,
+    "ok"
+  );
+
+  els.results.hidden = false;
+  renderDiagnostics();
+  renderTable();
 }
 
 function setStatus(msg, kind) {
-  els.parseStatus.textContent = msg;
-  els.parseStatus.className = "status" + (kind ? " " + kind : "");
+  els.status.textContent = msg;
+  els.status.className = "status" + (kind ? " " + kind : "");
 }
 
-els.parse.addEventListener("click", runAnalysis);
+// Sample data for quick testing
+const SAMPLE_WINS = `Air Attack\t293
+Armory\t152
+Cannon\t2802
+Cannonball\t2628
+Rerun\t2579
+Slicer\t2669
+Papercut\t2370
+Trasher\t1402
+Ocean's Fury\t22
+Harmonize\t44
+Crossbow\t66
+Contamination\t1840
+Flash\t12
+Flutter\t8
+Superposition\t180
+Singularity\t140
+Hyperdrive\t195`;
 
-els.loadSample.addEventListener("click", () => {
-  els.dataInput.value = SAMPLE_DATA;
+const SAMPLE_LOSSES = `Air Attack\t129
+Armory\t84
+Cannon\t781
+Cannonball\t738
+Rerun\t441
+Slicer\t1030
+Papercut\t562
+Trasher\t235
+Ocean's Fury\t13
+Harmonize\t23
+Crossbow\t40
+Contamination\t540
+Flash\t68
+Flutter\t52
+Superposition\t27
+Singularity\t60
+Hyperdrive\t40`;
+
+els.analyze.addEventListener("click", runAnalysis);
+els.sample.addEventListener("click", () => {
+  els.wins.value = SAMPLE_WINS;
+  els.losses.value = SAMPLE_LOSSES;
   runAnalysis();
 });
-
 els.clear.addEventListener("click", () => {
-  els.dataInput.value = "";
-  state.rows = [];
-  state.extraColumns = [];
-  els.resultsPanel.hidden = true;
+  els.wins.value = "";
+  els.losses.value = "";
+  state.results = [];
+  state.unmatchedWins = [];
+  state.unmatchedLosses = [];
+  state.unpastedCards = [];
+  els.results.hidden = true;
+  els.diagnostics.hidden = true;
   setStatus("", "");
-});
-
-els.fileInput.addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    els.dataInput.value = ev.target.result;
-    runAnalysis();
-  };
-  reader.readAsText(file);
-});
-
-[els.buffT, els.nerfT, els.reworkT, els.minGames].forEach((input) => {
-  input.addEventListener("change", () => {
-    if (state.rows.length > 0) {
-      state.rows = analyze(state.rows.map(({ card, wins, losses, ...rest }) => {
-        // strip computed fields and keep extras
-        const extras = {};
-        for (const k of state.extraColumns) extras[k] = rest[k];
-        return { card, wins, losses, ...extras };
-      }));
-      renderTable();
-    }
-  });
 });
 
 els.search.addEventListener("input", (e) => {
   state.filters.search = e.target.value;
   renderTable();
 });
-
-els.statusFilters.addEventListener("change", (e) => {
-  if (e.target.matches('input[type="checkbox"]')) {
-    const v = e.target.value;
-    if (e.target.checked) state.filters.statuses.add(v);
-    else state.filters.statuses.delete(v);
-    renderTable();
-  }
+els.hideZero.addEventListener("change", (e) => {
+  state.filters.hideZero = e.target.checked;
+  renderTable();
 });
-
 els.export.addEventListener("click", exportCSV);
+
+// ------------------------------------------------------------
+// Boot
+// ------------------------------------------------------------
+async function boot() {
+  try {
+    const res = await fetch(CARDS_URL);
+    if (!res.ok) throw new Error(`Could not load ${CARDS_URL} (${res.status})`);
+    MASTER_CARDS = await res.json();
+    MASTER_INDEX = new Map(MASTER_CARDS.map((c) => [c.name.toLowerCase(), c]));
+    buildFilterChips();
+    setStatus(`Loaded ${MASTER_CARDS.length} cards from master list. Paste data to begin.`);
+  } catch (e) {
+    setStatus(`Failed to load master card list: ${e.message}. If opening as file://, run a local server instead (see README).`, "error");
+  }
+}
+boot();
