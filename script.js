@@ -20,7 +20,7 @@
 //   ovrRating   = ((adjWins/adjPlayed) * 0.5 / R1 - 0.4) / 0.02
 // ============================================================
 
-const CARDS_URL = "cards.json";
+const CARDS_URL = "cards.json?v=" + (window.__CACHE_BUST || Date.now());
 let MASTER_CARDS = []; // [{name, class, type, cost}]
 let MASTER_INDEX = new Map(); // lowercased name -> master card
 

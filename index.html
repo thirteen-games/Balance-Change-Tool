@@ -4,7 +4,19 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Balance Change Tool</title>
-  <link rel="stylesheet" href="style.css" />
+  <script>
+    // Cache-buster: GitHub Pages caches assets for ~10 min, which can leave
+    // teammates running stale JS/CSS after a deploy. Appending a fresh token
+    // forces the browser to always fetch the latest style.css, script.js and
+    // cards.json. (Assets are tiny, so skipping the cache costs nothing.)
+    window.__CACHE_BUST = Date.now();
+    (function () {
+      var link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "style.css?v=" + window.__CACHE_BUST;
+      document.head.appendChild(link);
+    })();
+  </script>
 </head>
 <body>
   <header>
@@ -97,6 +109,12 @@
     <p>Balance Change Tool · <a href="https://github.com/" id="repo-link">repository</a></p>
   </footer>
 
-  <script src="script.js"></script>
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      s.src = "script.js?v=" + (window.__CACHE_BUST || Date.now());
+      document.body.appendChild(s);
+    })();
+  </script>
 </body>
 </html>
