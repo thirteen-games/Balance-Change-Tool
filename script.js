@@ -54,6 +54,7 @@ const els = {
   diagBody: $("#diagnostics-body"),
   results: $("#results-panel"),
   summary: $("#summary"),
+  aggregatesBody: $("#aggregates-body"),
   search: $("#search-input"),
   classFilters: $("#class-filters"),
   typeFilters: $("#type-filters"),
@@ -186,6 +187,121 @@ function analyze(winsMap, lossesMap) {
     rows: final,
     constants: { overallWinRate, medianTotal, maxTotal, overallAdjWR, sumWins, sumTotal, sumLosses: sumTotal - sumWins },
   };
+}
+
+// ------------------------------------------------------------
+// Aggregate breakdowns (replicates the Sheet2-style summary tables)
+// Adj Win Rate = win_rate * 0.5 / overall_win_rate  (matches AR3 formula)
+// ------------------------------------------------------------
+
+function groupBy(rows, keyFn) {
+  const m = new Map();
+  for (const r of rows) {
+    const k = keyFn(r);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(r);
+  }
+  return m;
+}
+
+function aggregate(rows, overallWinRate, scopeTotal) {
+  const wins = rows.reduce((a, r) => a + r.wins, 0);
+  const losses = rows.reduce((a, r) => a + r.losses, 0);
+  const total = wins + losses;
+  const winRate = total > 0 ? wins / total : 0;
+  const adjWinRate = overallWinRate > 0 ? (winRate * 0.5) / overallWinRate : 0;
+  const playRate = scopeTotal > 0 ? total / scopeTotal : 0;
+  return { wins, losses, total, winRate, adjWinRate, playRate };
+}
+
+function computeAggregates(rows, constants) {
+  const owr = constants.overallWinRate;
+  const totalGames = rows.reduce((a, r) => a + r.total, 0);
+
+  // By class (uses ALL games as denominator for play rate, like the spreadsheet)
+  const byClass = [...groupBy(rows, (r) => r.class).entries()]
+    .map(([cls, list]) => ({ label: cls, ...aggregate(list, owr, totalGames) }))
+    .sort((a, b) => b.total - a.total);
+
+  // By type
+  const byType = [...groupBy(rows, (r) => r.type).entries()]
+    .map(([typ, list]) => ({ label: typ, ...aggregate(list, owr, totalGames) }))
+    .sort((a, b) => {
+      const order = { Friend: 0, Power: 1, Superpower: 2 };
+      return (order[a.label] ?? 99) - (order[b.label] ?? 99);
+    });
+
+  // By cost (overall — play rate vs total games)
+  const byCost = [...groupBy(rows, (r) => r.cost).entries()]
+    .map(([cost, list]) => ({ label: String(cost), cost, ...aggregate(list, owr, totalGames) }))
+    .sort((a, b) => a.cost - b.cost);
+
+  // By cost × type — play rate scoped to that type's total
+  const byTypeCost = {};
+  const types = ["Friend", "Power", "Superpower"];
+  for (const t of types) {
+    const tRows = rows.filter((r) => r.type === t);
+    const tTotal = tRows.reduce((a, r) => a + r.total, 0);
+    byTypeCost[t] = [...groupBy(tRows, (r) => r.cost).entries()]
+      .map(([cost, list]) => ({ label: String(cost), cost, ...aggregate(list, owr, tTotal) }))
+      .sort((a, b) => a.cost - b.cost);
+    // Pad with empty rows for missing costs (so each type table has rows 1-6)
+    for (let c = 1; c <= 6; c++) {
+      if (!byTypeCost[t].find((r) => r.cost === c)) {
+        byTypeCost[t].push({ label: String(c), cost: c, wins: 0, losses: 0, total: 0, winRate: 0, adjWinRate: 0, playRate: 0 });
+      }
+    }
+    byTypeCost[t].sort((a, b) => a.cost - b.cost);
+  }
+
+  return { byClass, byType, byCost, byTypeCost };
+}
+
+const pct  = (v, dec = 1) => (v == null) ? "—" : (v * 100).toFixed(dec) + "%";
+const num  = (v) => (v == null ? 0 : v).toLocaleString();
+
+function renderAggTable(title, rows, columns) {
+  const ths = columns.map((c) => `<th>${c.label}</th>`).join("");
+  const trs = rows.map((r) => {
+    const tds = columns.map((c) => `<td>${c.cell(r)}</td>`).join("");
+    return `<tr>${tds}</tr>`;
+  }).join("");
+  return `
+    <div class="agg-table">
+      <h3>${esc(title)}</h3>
+      <table>
+        <thead><tr>${ths}</tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAggregates(agg) {
+  const groupCol = (label) => ({
+    label,
+    cell: (r) => `<span class="group-label">${esc(r.label)}</span>`,
+  });
+  const standardCols = (label) => [
+    groupCol(label),
+    { label: "Play %",  cell: (r) => pct(r.playRate, 1) },
+    { label: "Played",  cell: (r) => num(r.total) },
+    { label: "Wins",    cell: (r) => num(r.wins) },
+    { label: "Losses",  cell: (r) => num(r.losses) },
+    { label: "WR",      cell: (r) => pct(r.winRate, 1) },
+    { label: "Adj WR",  cell: (r) => pct(r.adjWinRate, 1) },
+  ];
+  const noAdjCols = (label) => standardCols(label).slice(0, -1); // drop Adj WR
+
+  const parts = [
+    renderAggTable("By Class",       agg.byClass, standardCols("Class")),
+    renderAggTable("By Type",        agg.byType,  standardCols("Type")),
+    renderAggTable("By Cost (all)",  agg.byCost,  noAdjCols("Cost")),
+    renderAggTable("Friend × Cost",      agg.byTypeCost.Friend,     noAdjCols("Cost")),
+    renderAggTable("Power × Cost",       agg.byTypeCost.Power,      noAdjCols("Cost")),
+    renderAggTable("Superpower × Cost",  agg.byTypeCost.Superpower, noAdjCols("Cost")),
+  ];
+  els.aggregatesBody.innerHTML = parts.join("");
 }
 
 // ------------------------------------------------------------
@@ -419,6 +535,7 @@ function runAnalysis() {
 
   const { rows, constants } = analyze(winsMap, lossesMap);
   state.results = rows;
+  state.constants = constants;
   state.unpastedCards = rows.filter((r) => r.total === 0).map((r) => r.name);
 
   setStatus(
@@ -429,6 +546,7 @@ function runAnalysis() {
 
   els.results.hidden = false;
   renderDiagnostics();
+  renderAggregates(computeAggregates(rows, constants));
   renderTable();
 }
 

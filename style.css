@@ -213,6 +213,107 @@ button.primary:hover {
   margin-top: 2px;
 }
 
+/* --- Aggregate breakdowns --- */
+
+.aggregates {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+}
+
+.aggregates > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 4px 0;
+  list-style: none;
+  user-select: none;
+}
+
+.aggregates > summary::before {
+  content: "▶";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.aggregates[open] > summary::before { transform: rotate(90deg); }
+
+.aggregates > summary::-webkit-details-marker { display: none; }
+
+.aggregates-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.agg-table {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  min-width: 0;
+}
+
+.agg-table h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 6px 10px;
+  background: var(--panel-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.agg-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  table-layout: auto;
+}
+
+.agg-table th, .agg-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agg-table th {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  background: var(--panel-2);
+  cursor: default;
+  position: static;
+}
+
+.agg-table th:first-child, .agg-table td:first-child {
+  text-align: left;
+  padding-left: 10px;
+}
+
+.agg-table th:last-child, .agg-table td:last-child {
+  padding-right: 10px;
+}
+
+.agg-table tr:last-child td { border-bottom: none; }
+
+.agg-table .group-label {
+  font-weight: 500;
+  color: var(--text);
+}
+
 /* --- Filters --- */
 
 .filters {
