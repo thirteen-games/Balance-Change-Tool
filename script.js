@@ -38,7 +38,9 @@ let MASTER_CARDS = []; // [{name, class, type, cost}]
 let MASTER_INDEX = new Map(); // lowercased name -> master card
 
 const state = {
-  results: [],            // analyzed rows
+  results: [],            // analyzed rows (Period A); each row may have _B sibling fields when comparing
+  resultsB: null,         // Period B analyzed rows (when comparing), keyed by name
+  compareMode: false,     // are we showing two-period comparison?
   unmatchedWins: [],      // names in wins paste not in master
   unmatchedLosses: [],    // names in losses paste not in master
   unpastedCards: [],      // master cards with zero wins+losses
@@ -60,8 +62,15 @@ const els = {
   // BigQuery panel
   bqStart: $("#bq-start"),
   bqEnd: $("#bq-end"),
+  bqStartLabel: $("#bq-start-label"),
+  bqEndLabel: $("#bq-end-label"),
   bqMinRating: $("#bq-min-rating"),
   bqHumanOnly: $("#bq-human-only"),
+  bqCompare: $("#bq-compare"),
+  bqPeriodB: $("#bq-period-b"),
+  bqStartB: $("#bq-start-b"),
+  bqEndB: $("#bq-end-b"),
+  bqPresetPrev: $("#bq-preset-prev"),
   bqSignin: $("#bq-signin-btn"),
   bqSignout: $("#bq-signout-btn"),
   bqRun: $("#bq-run-btn"),
@@ -143,6 +152,15 @@ function buildCountMap(rows) {
   for (const r of rows) {
     const k = r.name.toLowerCase();
     m.set(k, (m.get(k) || 0) + r.count);
+  }
+  return m;
+}
+
+function buildCountMapFromBQ(bqRows, field) {
+  const m = new Map();
+  for (const r of bqRows) {
+    if (!r.CardName) continue;
+    m.set(r.CardName.toLowerCase(), Number(r[field]) || 0);
   }
   return m;
 }
@@ -241,29 +259,30 @@ function aggregate(rows, overallWinRate, scopeTotal) {
   return { wins, losses, total, winRate, adjWinRate, playRate };
 }
 
-function computeAggregates(rows, constants) {
+function computeAggregates(rows, constants, rowsB) {
   const owr = constants.overallWinRate;
   const totalGames = rows.reduce((a, r) => a + r.total, 0);
 
-  // By class (uses ALL games as denominator for play rate, like the spreadsheet)
-  const byClass = [...groupBy(rows, (r) => r.class).entries()]
-    .map(([cls, list]) => ({ label: cls, ...aggregate(list, owr, totalGames) }))
-    .sort((a, b) => b.total - a.total);
+  // Group helper that returns rows for one group, sorted
+  const group = (rows, keyFn, scopeTotal, sortFn) =>
+    [...groupBy(rows, keyFn).entries()]
+      .map(([label, list]) => ({ label, ...aggregate(list, owr, scopeTotal) }))
+      .sort(sortFn);
 
-  // By type
-  const byType = [...groupBy(rows, (r) => r.type).entries()]
-    .map(([typ, list]) => ({ label: typ, ...aggregate(list, owr, totalGames) }))
-    .sort((a, b) => {
+  const byClass = group(rows, (r) => r.class, totalGames,
+    (a, b) => b.total - a.total);
+
+  const byType = group(rows, (r) => r.type, totalGames,
+    (a, b) => {
       const order = { Friend: 0, Power: 1, Superpower: 2 };
       return (order[a.label] ?? 99) - (order[b.label] ?? 99);
     });
 
-  // By cost (overall — play rate vs total games)
+  // For cost-keyed groups we want the numeric cost retained
   const byCost = [...groupBy(rows, (r) => r.cost).entries()]
     .map(([cost, list]) => ({ label: String(cost), cost, ...aggregate(list, owr, totalGames) }))
     .sort((a, b) => a.cost - b.cost);
 
-  // By cost × type — play rate scoped to that type's total
   const byTypeCost = {};
   const types = ["Friend", "Power", "Superpower"];
   for (const t of types) {
@@ -272,7 +291,6 @@ function computeAggregates(rows, constants) {
     byTypeCost[t] = [...groupBy(tRows, (r) => r.cost).entries()]
       .map(([cost, list]) => ({ label: String(cost), cost, ...aggregate(list, owr, tTotal) }))
       .sort((a, b) => a.cost - b.cost);
-    // Pad with empty rows for missing costs (so each type table has rows 1-6)
     for (let c = 1; c <= 6; c++) {
       if (!byTypeCost[t].find((r) => r.cost === c)) {
         byTypeCost[t].push({ label: String(c), cost: c, wins: 0, losses: 0, total: 0, winRate: 0, adjWinRate: 0, playRate: 0 });
@@ -281,7 +299,30 @@ function computeAggregates(rows, constants) {
     byTypeCost[t].sort((a, b) => a.cost - b.cost);
   }
 
-  return { byClass, byType, byCost, byTypeCost };
+  const result = { byClass, byType, byCost, byTypeCost };
+
+  // Compute Period B aggregates and attach deltas if comparing
+  if (rowsB && rowsB.length) {
+    const bConst = { overallWinRate: rowsB.reduce((a, r) => a + r.wins, 0) / Math.max(1, rowsB.reduce((a, r) => a + r.total, 0)) };
+    const bAgg = computeAggregates(rowsB, bConst, null); // recurse, no nested compare
+
+    const attachDelta = (aList, bList) => {
+      const bMap = new Map(bList.map((r) => [r.label, r]));
+      return aList.map((a) => {
+        const b = bMap.get(a.label);
+        if (!b || b.total === 0) return { ...a, deltaWinRate: null, deltaTotal: null };
+        return { ...a, deltaWinRate: a.winRate - b.winRate, deltaTotal: a.total - b.total };
+      });
+    };
+
+    result.byClass = attachDelta(byClass, bAgg.byClass);
+    result.byType  = attachDelta(byType,  bAgg.byType);
+    result.byCost  = attachDelta(byCost,  bAgg.byCost);
+    result.byTypeCost = {};
+    for (const t of types) result.byTypeCost[t] = attachDelta(byTypeCost[t], bAgg.byTypeCost[t]);
+  }
+
+  return result;
 }
 
 const pct  = (v, dec = 1) => (v == null) ? "—" : (v * 100).toFixed(dec) + "%";
@@ -309,16 +350,28 @@ function renderAggregates(agg) {
     label,
     cell: (r) => `<span class="group-label">${esc(r.label)}</span>`,
   });
-  const standardCols = (label) => [
-    groupCol(label),
-    { label: "Play %",  cell: (r) => pct(r.playRate, 1) },
-    { label: "Played",  cell: (r) => num(r.total) },
-    { label: "Wins",    cell: (r) => num(r.wins) },
-    { label: "Losses",  cell: (r) => num(r.losses) },
-    { label: "WR",      cell: (r) => pct(r.winRate, 1) },
-    { label: "Adj WR",  cell: (r) => pct(r.adjWinRate, 1) },
-  ];
-  const noAdjCols = (label) => standardCols(label).slice(0, -1); // drop Adj WR
+  const deltaWRCol = {
+    label: "Δ WR",
+    cell: (r) => fmtDelta(r.deltaWinRate, "pct1", true),
+  };
+  const standardCols = (label) => {
+    const cols = [
+      groupCol(label),
+      { label: "Play %",  cell: (r) => pct(r.playRate, 1) },
+      { label: "Played",  cell: (r) => num(r.total) },
+      { label: "Wins",    cell: (r) => num(r.wins) },
+      { label: "Losses",  cell: (r) => num(r.losses) },
+      { label: "WR",      cell: (r) => pct(r.winRate, 1) },
+      { label: "Adj WR",  cell: (r) => pct(r.adjWinRate, 1) },
+    ];
+    if (state.compareMode) cols.push(deltaWRCol);
+    return cols;
+  };
+  const noAdjCols = (label) => {
+    // standardCols minus "Adj WR" (keep delta if present at the end)
+    const cols = standardCols(label);
+    return cols.filter((c) => c.label !== "Adj WR");
+  };
 
   const parts = [
     renderAggTable("By Class",       agg.byClass, standardCols("Class")),
@@ -335,7 +388,7 @@ function renderAggregates(agg) {
 // Rendering
 // ------------------------------------------------------------
 
-const COLS = [
+const BASE_COLS = [
   { key: "name",       label: "Card",        type: "string", render: (r) => `<span class="card-name">${esc(r.name)}</span>` },
   { key: "class",      label: "Class",       type: "string", render: (r) => `<span class="class-pill class-${r.class}">${r.class}</span>` },
   { key: "type",       label: "Type",        type: "string", render: (r) => `<span class="type-${r.type}">${r.type}</span>` },
@@ -350,11 +403,39 @@ const COLS = [
   { key: "ovrRating",  label: "Ovr Rating",  type: "number", numeric: true, bar: "nerf",   fmt: (v) => v.toFixed(2), max: 20 },
 ];
 
+// Delta columns are appended when state.compareMode is true.
+// positiveIsGood determines the green/red direction:
+//   - winRate, total, ovrRating: up = good (green)
+//   - buffRating: up = bad (red) — card is now more in need of a buff
+const DELTA_COLS = [
+  { key: "deltaWinRate",    label: "Δ Win %",  type: "number", numeric: true, fmt: (v) => fmtDelta(v, "pct1", true) },
+  { key: "deltaTotal",      label: "Δ Played", type: "number", numeric: true, fmt: (v) => fmtDelta(v, "int",  true) },
+  { key: "deltaBuffRating", label: "Δ Buff",   type: "number", numeric: true, fmt: (v) => fmtDelta(v, "num2", false) },
+  { key: "deltaOvrRating",  label: "Δ Ovr",    type: "number", numeric: true, fmt: (v) => fmtDelta(v, "num2", true) },
+];
+
+function getCols() {
+  return state.compareMode ? [...BASE_COLS, ...DELTA_COLS] : BASE_COLS;
+}
+
+function fmtDelta(v, fmt, positiveIsGood) {
+  if (v == null || !isFinite(v)) return `<span class="delta delta-zero">—</span>`;
+  const cls = v === 0 ? "delta-zero" : ((v > 0) === positiveIsGood ? "delta-pos" : "delta-neg");
+  const sign = v > 0 ? "+" : "";
+  let s;
+  if (fmt === "pct1")     s = sign + (v * 100).toFixed(1) + "%";
+  else if (fmt === "int") s = sign + Math.round(v).toLocaleString();
+  else                    s = sign + v.toFixed(2);
+  return `<span class="delta ${cls}">${s}</span>`;
+}
+
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
 }
 
 function renderTable() {
+  const COLS = getCols();
+
   // Header
   els.thead.innerHTML = "";
   const tr = document.createElement("tr");
@@ -400,7 +481,8 @@ function renderTable() {
     }
     els.tbody.appendChild(tr);
   }
-  els.rowCount.textContent = `Showing ${rows.length} of ${state.results.length} cards`;
+  els.rowCount.textContent = `Showing ${rows.length} of ${state.results.length} cards` +
+    (state.compareMode ? " · Δ vs Period B" : "");
 
   renderSummary();
 }
@@ -418,7 +500,7 @@ function applyFilters(rows) {
 }
 
 function sortRows(rows) {
-  const col = COLS.find((c) => c.key === state.sort.key);
+  const col = getCols().find((c) => c.key === state.sort.key);
   const isNum = col && col.type === "number";
   const sign = state.sort.dir === "asc" ? 1 : -1;
   return [...rows].sort((a, b) => {
@@ -512,14 +594,16 @@ function renderDiagnostics() {
 // ------------------------------------------------------------
 
 function exportCSV() {
+  const COLS = getCols();
   const rows = sortRows(applyFilters(state.results));
   const header = COLS.map((c) => c.label).join(",");
   const body = rows.map((r) =>
     COLS.map((c) => {
       let v = r[c.key];
       if (typeof v === "number") {
-        if (c.key === "winRate" || c.key === "pctPlayed" || c.key === "winRate2") v = (v * 100).toFixed(3);
-        else if (c.key === "buffRating" || c.key === "ovrRating") v = v.toFixed(4);
+        if (c.key === "winRate" || c.key === "pctPlayed" || c.key === "winRate2" || c.key === "deltaWinRate") v = (v * 100).toFixed(3);
+        else if (c.key === "buffRating" || c.key === "ovrRating" || c.key === "deltaBuffRating" || c.key === "deltaOvrRating") v = v.toFixed(4);
+        else if (c.key === "deltaTotal") v = Math.round(v);
       }
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -594,15 +678,68 @@ function getBQParams() {
   };
 }
 
+function getBQParamsB() {
+  return {
+    startTime: els.bqStartB.value,
+    endTime: els.bqEndB.value,
+    minRating: Number(els.bqMinRating.value) || 0, // shared with A
+    humanOnly: els.bqHumanOnly.checked,             // shared with A
+  };
+}
+
 function refreshSQLPreview() {
-  const p = getBQParams();
-  if (!p.startTime || !p.endTime) {
+  const compare = els.bqCompare.checked;
+  const pA = getBQParams();
+  if (!pA.startTime || !pA.endTime) {
     els.bqSqlWins.textContent = "(set start and end times to preview the query)";
     els.bqSqlLosses.textContent = "";
     return;
   }
-  els.bqSqlWins.textContent   = buildBQQuery({ ...p, resultType: "winner" });
-  els.bqSqlLosses.textContent = buildBQQuery({ ...p, resultType: "loser" });
+  const aLabel = compare ? "-- Period A wins --\n" : "";
+  const aLossLabel = compare ? "-- Period A losses --\n" : "";
+  let winsText = aLabel + buildBQQuery({ ...pA, resultType: "winner" });
+  let lossText = aLossLabel + buildBQQuery({ ...pA, resultType: "loser" });
+  if (compare) {
+    const pB = getBQParamsB();
+    if (pB.startTime && pB.endTime) {
+      winsText += "\n\n-- Period B wins --\n" + buildBQQuery({ ...pB, resultType: "winner" });
+      lossText += "\n\n-- Period B losses --\n" + buildBQQuery({ ...pB, resultType: "loser" });
+    } else {
+      winsText += "\n\n-- Period B wins: set Period B start/end --";
+      lossText += "\n\n-- Period B losses: set Period B start/end --";
+    }
+  }
+  els.bqSqlWins.textContent = winsText;
+  els.bqSqlLosses.textContent = lossText;
+}
+
+function setPeriodBToPrevious() {
+  const aStart = els.bqStart.value && new Date(els.bqStart.value);
+  const aEnd   = els.bqEnd.value   && new Date(els.bqEnd.value);
+  if (!aStart || !aEnd || isNaN(aStart) || isNaN(aEnd)) {
+    setBQStatus("Set Period A start/end first.", "error");
+    return;
+  }
+  const durationMs = aEnd - aStart;
+  const bEnd = new Date(aStart);
+  const bStart = new Date(aStart.getTime() - durationMs);
+  const toLocal = (d) => {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  els.bqStartB.value = toLocal(bStart);
+  els.bqEndB.value   = toLocal(bEnd);
+  saveBQPrefs();
+  refreshSQLPreview();
+}
+
+function toggleCompareUI() {
+  const on = els.bqCompare.checked;
+  els.bqPeriodB.hidden = !on;
+  els.bqStartLabel.textContent = on ? "Period A start" : "Start";
+  els.bqEndLabel.textContent   = on ? "Period A end"   : "End";
+  refreshSQLPreview();
+  saveBQPrefs();
 }
 
 /** Run a SQL query against BigQuery REST API; returns array of row objects. */
@@ -649,32 +786,72 @@ function rowsToPasteFormat(rows, countField) {
 }
 
 async function runBQAndAnalyze() {
-  const p = getBQParams();
-  if (!p.startTime || !p.endTime) {
+  const compareMode = els.bqCompare.checked;
+  const pA = getBQParams();
+  if (!pA.startTime || !pA.endTime) {
     setBQStatus("Set both start and end times first.", "error");
     return;
   }
-  if (p.minRating < 0) {
+  if (pA.minRating < 0) {
     setBQStatus("Min rating must be ≥ 0.", "error");
     return;
   }
+  let pB = null;
+  if (compareMode) {
+    pB = getBQParamsB();
+    if (!pB.startTime || !pB.endTime) {
+      setBQStatus("Compare mode is on — set Period B start and end too.", "error");
+      return;
+    }
+  }
 
   els.bqRun.disabled = true;
-  setBQStatus("Running queries...", "");
+  setBQStatus(compareMode ? "Running 4 queries..." : "Running 2 queries...", "");
   refreshSQLPreview();
 
   try {
-    const sqlW = buildBQQuery({ ...p, resultType: "winner" });
-    const sqlL = buildBQQuery({ ...p, resultType: "loser" });
     const t0 = performance.now();
-    const [winRows, lossRows] = await Promise.all([runBQQuery(sqlW), runBQQuery(sqlL)]);
+    const queries = [
+      runBQQuery(buildBQQuery({ ...pA, resultType: "winner" })),
+      runBQQuery(buildBQQuery({ ...pA, resultType: "loser" })),
+    ];
+    if (compareMode) {
+      queries.push(runBQQuery(buildBQQuery({ ...pB, resultType: "winner" })));
+      queries.push(runBQQuery(buildBQQuery({ ...pB, resultType: "loser" })));
+    }
+    const results = await Promise.all(queries);
+    const [winsA, lossesA, winsB, lossesB] = results;
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
 
-    els.wins.value   = rowsToPasteFormat(winRows, "RankedWins");
-    els.losses.value = rowsToPasteFormat(lossRows, "RankedLosses");
+    // Period A goes into the visible textareas
+    els.wins.value   = rowsToPasteFormat(winsA, "RankedWins");
+    els.losses.value = rowsToPasteFormat(lossesA, "RankedLosses");
 
-    setBQStatus(`Fetched ${winRows.length} wins rows and ${lossRows.length} losses rows in ${elapsed}s.`, "ok");
-    runAnalysis();
+    // Build maps directly from BQ rows (no textarea round-trip needed)
+    const winsMapA   = buildCountMapFromBQ(winsA, "RankedWins");
+    const lossesMapA = buildCountMapFromBQ(lossesA, "RankedLosses");
+    let optBMaps = null;
+    if (compareMode) {
+      optBMaps = {
+        wins:   buildCountMapFromBQ(winsB, "RankedWins"),
+        losses: buildCountMapFromBQ(lossesB, "RankedLosses"),
+      };
+    }
+
+    // Track unmatched names from Period A
+    const trackUnmatched = (rows, field) =>
+      rows.map((r) => r.CardName).filter((n) => n && !MASTER_INDEX.has(n.toLowerCase()));
+    state.unmatchedWins   = [...new Set(trackUnmatched(winsA,   "RankedWins").map((s) => s.toLowerCase()))]
+      .map((lc) => winsA.find((r) => r.CardName && r.CardName.toLowerCase() === lc).CardName);
+    state.unmatchedLosses = [...new Set(trackUnmatched(lossesA, "RankedLosses").map((s) => s.toLowerCase()))]
+      .map((lc) => lossesA.find((r) => r.CardName && r.CardName.toLowerCase() === lc).CardName);
+
+    applyAnalysis(winsMapA, lossesMapA, optBMaps);
+
+    const msg = compareMode
+      ? `Fetched 4 queries in ${elapsed}s. Comparing Period A (${winsA.length}/${lossesA.length} rows) vs Period B (${winsB.length}/${lossesB.length} rows).`
+      : `Fetched ${winsA.length} wins rows and ${lossesA.length} losses rows in ${elapsed}s.`;
+    setBQStatus(msg, "ok");
   } catch (e) {
     setBQStatus(`Query failed: ${e.message}`, "error");
   } finally {
@@ -755,32 +932,90 @@ function signOutFromBQ() {
 /** Restore saved parameters from localStorage, or set sane defaults. */
 function loadBQPrefs() {
   const saved = JSON.parse(localStorage.getItem("bqPrefs") || "{}");
-  // Default to last 30 days at 00:00
+  // Default Period A: last 30 days
   const now = new Date();
   const monthAgo = new Date(now.getTime() - 30 * 86400 * 1000);
   const toLocal = (d) => {
     const pad = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
-  els.bqStart.value      = saved.startTime || toLocal(monthAgo);
-  els.bqEnd.value        = saved.endTime   || toLocal(now);
-  els.bqMinRating.value  = saved.minRating ?? 600;
+  els.bqStart.value       = saved.startTime  || toLocal(monthAgo);
+  els.bqEnd.value         = saved.endTime    || toLocal(now);
+  els.bqStartB.value      = saved.startTimeB || "";
+  els.bqEndB.value        = saved.endTimeB   || "";
+  els.bqMinRating.value   = saved.minRating ?? 600;
   els.bqHumanOnly.checked = !!saved.humanOnly;
-  refreshSQLPreview();
+  els.bqCompare.checked   = !!saved.compare;
+  toggleCompareUI();
 }
 
 function saveBQPrefs() {
   localStorage.setItem("bqPrefs", JSON.stringify({
-    startTime: els.bqStart.value,
-    endTime: els.bqEnd.value,
-    minRating: els.bqMinRating.value,
-    humanOnly: els.bqHumanOnly.checked,
+    startTime:  els.bqStart.value,
+    endTime:    els.bqEnd.value,
+    startTimeB: els.bqStartB.value,
+    endTimeB:   els.bqEndB.value,
+    minRating:  els.bqMinRating.value,
+    humanOnly:  els.bqHumanOnly.checked,
+    compare:    els.bqCompare.checked,
   }));
 }
 
 // ------------------------------------------------------------
 // Wire up
 // ------------------------------------------------------------
+
+/**
+ * Run analysis and render. Used by both manual paste (runAnalysis) and
+ * BigQuery (runBQAndAnalyze) so the comparison-mode logic lives in one place.
+ *
+ * If optBMaps is provided ({wins, losses}), compute deltas vs Period B.
+ */
+function applyAnalysis(winsMapA, lossesMapA, optBMaps) {
+  const { rows: rowsA, constants } = analyze(winsMapA, lossesMapA);
+
+  let finalRows = rowsA;
+  let rowsB = null;
+
+  if (optBMaps) {
+    const { rows: rB } = analyze(optBMaps.wins, optBMaps.losses);
+    rowsB = rB;
+    const bByName = new Map(rB.map((r) => [r.name, r]));
+
+    finalRows = rowsA.map((a) => {
+      const b = bByName.get(a.name);
+      const hasB = b && b.total > 0;
+      return {
+        ...a,
+        hasB: !!hasB,
+        // Period B raw fields (useful for export / debugging)
+        winsB:        b ? b.wins : 0,
+        lossesB:      b ? b.losses : 0,
+        totalB:       b ? b.total : 0,
+        winRateB:     b ? b.winRate : 0,
+        buffRatingB:  b ? b.buffRating : 0,
+        ovrRatingB:   b ? b.ovrRating : 0,
+        // Deltas (Period A - Period B)
+        deltaWinRate:    hasB ? a.winRate    - b.winRate    : null,
+        deltaTotal:      hasB ? a.total      - b.total      : null,
+        deltaBuffRating: hasB ? a.buffRating - b.buffRating : null,
+        deltaOvrRating:  hasB ? a.ovrRating  - b.ovrRating  : null,
+      };
+    });
+  }
+
+  state.results = finalRows;
+  state.resultsB = rowsB;
+  state.compareMode = !!optBMaps;
+  state.constants = constants;
+  state.unpastedCards = rowsA.filter((r) => r.total === 0).map((r) => r.name);
+
+  els.results.hidden = false;
+  renderDiagnostics();
+  renderAggregates(computeAggregates(state.results, constants, rowsB));
+  renderTable();
+  return constants;
+}
 
 function runAnalysis() {
   const winsRows = parsePaste(els.wins.value);
@@ -804,21 +1039,13 @@ function runAnalysis() {
     lossesRows.find((r) => r.name.toLowerCase() === lc).name
   );
 
-  const { rows, constants } = analyze(winsMap, lossesMap);
-  state.results = rows;
-  state.constants = constants;
-  state.unpastedCards = rows.filter((r) => r.total === 0).map((r) => r.name);
+  const constants = applyAnalysis(winsMap, lossesMap, null);
 
   setStatus(
     `Parsed ${winsRows.length} win rows, ${lossesRows.length} loss rows. ` +
     `Overall WR: ${(constants.overallWinRate*100).toFixed(1)}%, median total played: ${constants.medianTotal}.`,
     "ok"
   );
-
-  els.results.hidden = false;
-  renderDiagnostics();
-  renderAggregates(computeAggregates(rows, constants));
-  renderTable();
 }
 
 function setStatus(msg, kind) {
@@ -895,7 +1122,9 @@ els.export.addEventListener("click", exportCSV);
 els.bqSignin.addEventListener("click", signInToBQ);
 els.bqSignout.addEventListener("click", signOutFromBQ);
 els.bqRun.addEventListener("click", runBQAndAnalyze);
-[els.bqStart, els.bqEnd, els.bqMinRating, els.bqHumanOnly].forEach((el) => {
+els.bqCompare.addEventListener("change", toggleCompareUI);
+els.bqPresetPrev.addEventListener("click", setPeriodBToPrevious);
+[els.bqStart, els.bqEnd, els.bqStartB, els.bqEndB, els.bqMinRating, els.bqHumanOnly].forEach((el) => {
   el.addEventListener("change", () => {
     saveBQPrefs();
     refreshSQLPreview();

@@ -42,11 +42,11 @@
 
       <div class="bq-params">
         <label class="param">
-          <span>Start</span>
+          <span id="bq-start-label">Start</span>
           <input type="datetime-local" id="bq-start" />
         </label>
         <label class="param">
-          <span>End</span>
+          <span id="bq-end-label">End</span>
           <input type="datetime-local" id="bq-end" />
         </label>
         <label class="param">
@@ -57,6 +57,22 @@
           <input type="checkbox" id="bq-human-only" />
           <span>Human vs human only</span>
         </label>
+        <label class="param checkbox-row">
+          <input type="checkbox" id="bq-compare" />
+          <span>Compare two periods</span>
+        </label>
+      </div>
+
+      <div class="bq-params bq-period-b" id="bq-period-b" hidden>
+        <label class="param">
+          <span>Period B start (baseline)</span>
+          <input type="datetime-local" id="bq-start-b" />
+        </label>
+        <label class="param">
+          <span>Period B end</span>
+          <input type="datetime-local" id="bq-end-b" />
+        </label>
+        <button id="bq-preset-prev" type="button" class="bq-preset">Set B = previous period of same length</button>
       </div>
 
       <div class="actions">
