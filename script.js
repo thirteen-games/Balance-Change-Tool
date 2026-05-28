@@ -409,7 +409,7 @@ const BASE_COLS = [
 //   - buffRating: up = bad (red) — card is now more in need of a buff
 const DELTA_COLS = [
   { key: "deltaWinRate",    label: "Δ Win %",  type: "number", numeric: true, fmt: (v) => fmtDelta(v, "pct1", true) },
-  { key: "deltaTotal",      label: "Δ Played", type: "number", numeric: true, fmt: (v) => fmtDelta(v, "int",  true) },
+  { key: "deltaPctPlayed",  label: "Δ % Play", type: "number", numeric: true, fmt: (v) => fmtDelta(v, "pct2", true) },
   { key: "deltaBuffRating", label: "Δ Buff",   type: "number", numeric: true, fmt: (v) => fmtDelta(v, "num2", false) },
   { key: "deltaOvrRating",  label: "Δ Ovr",    type: "number", numeric: true, fmt: (v) => fmtDelta(v, "num2", true) },
 ];
@@ -423,9 +423,10 @@ function fmtDelta(v, fmt, positiveIsGood) {
   const cls = v === 0 ? "delta-zero" : ((v > 0) === positiveIsGood ? "delta-pos" : "delta-neg");
   const sign = v > 0 ? "+" : "";
   let s;
-  if (fmt === "pct1")     s = sign + (v * 100).toFixed(1) + "%";
-  else if (fmt === "int") s = sign + Math.round(v).toLocaleString();
-  else                    s = sign + v.toFixed(2);
+  if (fmt === "pct1")      s = sign + (v * 100).toFixed(1) + "%";
+  else if (fmt === "pct2") s = sign + (v * 100).toFixed(2) + "%";
+  else if (fmt === "int")  s = sign + Math.round(v).toLocaleString();
+  else                     s = sign + v.toFixed(2);
   return `<span class="delta ${cls}">${s}</span>`;
 }
 
@@ -601,9 +602,10 @@ function exportCSV() {
     COLS.map((c) => {
       let v = r[c.key];
       if (typeof v === "number") {
-        if (c.key === "winRate" || c.key === "pctPlayed" || c.key === "winRate2" || c.key === "deltaWinRate") v = (v * 100).toFixed(3);
-        else if (c.key === "buffRating" || c.key === "ovrRating" || c.key === "deltaBuffRating" || c.key === "deltaOvrRating") v = v.toFixed(4);
-        else if (c.key === "deltaTotal") v = Math.round(v);
+        if (c.key === "winRate" || c.key === "pctPlayed" || c.key === "winRate2" ||
+            c.key === "deltaWinRate" || c.key === "deltaPctPlayed") v = (v * 100).toFixed(3);
+        else if (c.key === "buffRating" || c.key === "ovrRating" ||
+                 c.key === "deltaBuffRating" || c.key === "deltaOvrRating") v = v.toFixed(4);
       }
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -995,9 +997,11 @@ function applyAnalysis(winsMapA, lossesMapA, optBMaps) {
         winRateB:     b ? b.winRate : 0,
         buffRatingB:  b ? b.buffRating : 0,
         ovrRatingB:   b ? b.ovrRating : 0,
-        // Deltas (Period A - Period B)
+        // Deltas (Period A - Period B). %-Play is the share-of-all-games,
+        // not the absolute count, so it stays comparable across periods of
+        // different lengths.
         deltaWinRate:    hasB ? a.winRate    - b.winRate    : null,
-        deltaTotal:      hasB ? a.total      - b.total      : null,
+        deltaPctPlayed:  hasB ? a.pctPlayed  - b.pctPlayed  : null,
         deltaBuffRating: hasB ? a.buffRating - b.buffRating : null,
         deltaOvrRating:  hasB ? a.ovrRating  - b.ovrRating  : null,
       };
