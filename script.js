@@ -21,6 +21,19 @@
 // ============================================================
 
 const CARDS_URL = "cards.json?v=" + (window.__CACHE_BUST || Date.now());
+
+// ------------------------------------------------------------
+// BigQuery / OAuth config
+// ------------------------------------------------------------
+const BQ_PROJECT_ID = "market-party-289715";
+const BQ_DATASET = "nova_island_analytics_prod";
+const BQ_TABLE = "match";
+const OAUTH_CLIENT_ID = "193027998680-51vij006s136fds9fla21cada2pf181d.apps.googleusercontent.com";
+const OAUTH_SCOPE = "https://www.googleapis.com/auth/bigquery.readonly";
+
+let bqTokenClient = null;       // GIS token client
+let bqAccessToken = null;       // current access token
+let bqTokenExpiresAt = 0;       // ms epoch when token expires
 let MASTER_CARDS = []; // [{name, class, type, cost}]
 let MASTER_INDEX = new Map(); // lowercased name -> master card
 
@@ -44,6 +57,19 @@ const state = {
 // ------------------------------------------------------------
 const $ = (s) => document.querySelector(s);
 const els = {
+  // BigQuery panel
+  bqStart: $("#bq-start"),
+  bqEnd: $("#bq-end"),
+  bqMinRating: $("#bq-min-rating"),
+  bqHumanOnly: $("#bq-human-only"),
+  bqSignin: $("#bq-signin-btn"),
+  bqSignout: $("#bq-signout-btn"),
+  bqRun: $("#bq-run-btn"),
+  bqUser: $("#bq-user"),
+  bqStatus: $("#bq-status"),
+  bqSqlWins: $("#bq-sql-wins"),
+  bqSqlLosses: $("#bq-sql-losses"),
+  // Manual paste
   wins: $("#wins-input"),
   losses: $("#losses-input"),
   analyze: $("#analyze-btn"),
@@ -52,6 +78,7 @@ const els = {
   status: $("#parse-status"),
   diagnostics: $("#diagnostics"),
   diagBody: $("#diagnostics-body"),
+  // Results
   results: $("#results-panel"),
   summary: $("#summary"),
   aggregatesBody: $("#aggregates-body"),
@@ -508,6 +535,250 @@ function exportCSV() {
 }
 
 // ------------------------------------------------------------
+// BigQuery integration
+// ------------------------------------------------------------
+
+/** Format a datetime-local value (YYYY-MM-DDTHH:MM) as BQ TIMESTAMP literal. */
+function fmtBQTimestamp(dtLocal) {
+  if (!dtLocal) return "";
+  // datetime-local has form 2026-04-01T18:00 (no seconds)
+  return dtLocal.replace("T", " ") + ":00";
+}
+
+/** Build the SQL query for either 'winner' or 'loser' results. */
+function buildBQQuery({ startTime, endTime, minRating, humanOnly, resultType }) {
+  const alias = resultType === "winner" ? "RankedWins" : "RankedLosses";
+  const start = fmtBQTimestamp(startTime);
+  const end   = fmtBQTimestamp(endTime);
+  const botLine = humanOnly
+    ? `\n    AND JSON_VALUE(mWin.metadata, '$.bot_match') = 'false'`
+    : "";
+  const tbl = `\`${BQ_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\``;
+
+  return `SELECT
+    JSON_VALUE(m.metadata, '$.card.name') AS CardName
+    , COUNT(mWin.time) AS ${alias}
+FROM ${tbl} AS m
+LEFT JOIN ${tbl} AS mWin ON (
+    mWin.match_id = m.match_id
+    AND mWin.event = "match_end"
+    AND mWin.time >= "${start}"
+    AND mWin.time <= "${end}"
+    AND mWin.player_id NOT LIKE '%Bot_%'
+    AND mWin.player_id NOT LIKE '%bot_%'
+    AND mWin.player_id NOT LIKE '%pponent%'${botLine}
+    AND JSON_VALUE(mWin.metadata, '$.match_result') = '${resultType}'
+    AND JSON_VALUE(mWin.metadata, '$.ranked') = 'true'
+    AND JSON_VALUE(mWin.metadata, '$.map') <> 'Rookie 100/50'
+    AND m.player_id = mWin.player_id
+)
+WHERE
+    m.event = 'card_played'
+    AND m.match_id = mWin.match_id
+    AND m.time >= "${start}"
+    AND m.time <= "${end}"
+    AND mWin.player_id NOT LIKE '%Bot_%'
+    AND mWin.player_id NOT LIKE '%bot_%'
+    AND mWin.player_id NOT LIKE '%pponent%'
+    AND CAST(JSON_VALUE(m.metadata, '$.player.rating') AS INT64) > ${minRating}
+GROUP BY CardName
+ORDER BY CardName`;
+}
+
+function getBQParams() {
+  return {
+    startTime: els.bqStart.value,
+    endTime: els.bqEnd.value,
+    minRating: Number(els.bqMinRating.value) || 0,
+    humanOnly: els.bqHumanOnly.checked,
+  };
+}
+
+function refreshSQLPreview() {
+  const p = getBQParams();
+  if (!p.startTime || !p.endTime) {
+    els.bqSqlWins.textContent = "(set start and end times to preview the query)";
+    els.bqSqlLosses.textContent = "";
+    return;
+  }
+  els.bqSqlWins.textContent   = buildBQQuery({ ...p, resultType: "winner" });
+  els.bqSqlLosses.textContent = buildBQQuery({ ...p, resultType: "loser" });
+}
+
+/** Run a SQL query against BigQuery REST API; returns array of row objects. */
+async function runBQQuery(sql) {
+  if (!bqAccessToken || Date.now() > bqTokenExpiresAt) {
+    throw new Error("Not signed in (token expired). Click Sign in again.");
+  }
+  const url = `https://bigquery.googleapis.com/bigquery/v2/projects/${BQ_PROJECT_ID}/queries`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${bqAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: sql,
+      useLegacySql: false,
+      timeoutMs: 60000,
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    const msg = json.error?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  if (json.jobComplete === false) {
+    throw new Error("Query didn't complete within 60s — try a smaller date range.");
+  }
+  const fields = (json.schema?.fields || []).map((f) => f.name);
+  const rows = (json.rows || []).map((r) => {
+    const o = {};
+    fields.forEach((name, i) => { o[name] = r.f[i].v; });
+    return o;
+  });
+  return rows;
+}
+
+/** Convert query rows -> textarea string "CardName\tcount" lines. */
+function rowsToPasteFormat(rows, countField) {
+  return rows
+    .filter((r) => r.CardName !== null && r.CardName !== "")
+    .map((r) => `${r.CardName}\t${r[countField] ?? 0}`)
+    .join("\n");
+}
+
+async function runBQAndAnalyze() {
+  const p = getBQParams();
+  if (!p.startTime || !p.endTime) {
+    setBQStatus("Set both start and end times first.", "error");
+    return;
+  }
+  if (p.minRating < 0) {
+    setBQStatus("Min rating must be ≥ 0.", "error");
+    return;
+  }
+
+  els.bqRun.disabled = true;
+  setBQStatus("Running queries...", "");
+  refreshSQLPreview();
+
+  try {
+    const sqlW = buildBQQuery({ ...p, resultType: "winner" });
+    const sqlL = buildBQQuery({ ...p, resultType: "loser" });
+    const t0 = performance.now();
+    const [winRows, lossRows] = await Promise.all([runBQQuery(sqlW), runBQQuery(sqlL)]);
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+
+    els.wins.value   = rowsToPasteFormat(winRows, "RankedWins");
+    els.losses.value = rowsToPasteFormat(lossRows, "RankedLosses");
+
+    setBQStatus(`Fetched ${winRows.length} wins rows and ${lossRows.length} losses rows in ${elapsed}s.`, "ok");
+    runAnalysis();
+  } catch (e) {
+    setBQStatus(`Query failed: ${e.message}`, "error");
+  } finally {
+    els.bqRun.disabled = false;
+  }
+}
+
+function setBQStatus(msg, kind) {
+  els.bqStatus.textContent = msg;
+  els.bqStatus.className = "status" + (kind ? " " + kind : "");
+}
+
+/** Try to extract email from an ID-token-ish access response; falls back gracefully. */
+function showSignedIn(email) {
+  els.bqSignin.hidden = true;
+  els.bqRun.hidden = false;
+  els.bqSignout.hidden = false;
+  els.bqUser.textContent = email ? `Signed in as ${email}` : "Signed in";
+  els.bqUser.className = "status ok";
+}
+
+function showSignedOut() {
+  els.bqSignin.hidden = false;
+  els.bqRun.hidden = true;
+  els.bqSignout.hidden = true;
+  els.bqUser.textContent = "";
+  els.bqUser.className = "status";
+}
+
+/** Initialize the GIS token client once the library has loaded. */
+function initBQAuth() {
+  if (typeof google === "undefined" || !google.accounts?.oauth2) {
+    // Library hasn't loaded yet — retry shortly
+    setTimeout(initBQAuth, 200);
+    return;
+  }
+  bqTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: OAUTH_CLIENT_ID,
+    scope: OAUTH_SCOPE,
+    callback: (resp) => {
+      if (resp.error) {
+        setBQStatus(`Sign-in failed: ${resp.error}`, "error");
+        return;
+      }
+      bqAccessToken = resp.access_token;
+      // GIS returns expires_in (seconds, typically 3600).
+      bqTokenExpiresAt = Date.now() + ((resp.expires_in || 3600) - 60) * 1000;
+      // Fetch the user's email for display (best-effort).
+      fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${bqAccessToken}` },
+      })
+        .then((r) => r.ok ? r.json() : null)
+        .then((u) => showSignedIn(u?.email))
+        .catch(() => showSignedIn(null));
+      setBQStatus("", "");
+    },
+  });
+  els.bqSignin.disabled = false;
+}
+
+function signInToBQ() {
+  if (!bqTokenClient) {
+    setBQStatus("Google auth library not loaded yet — try again in a moment.", "error");
+    return;
+  }
+  bqTokenClient.requestAccessToken({ prompt: "" });
+}
+
+function signOutFromBQ() {
+  if (bqAccessToken && google?.accounts?.oauth2?.revoke) {
+    google.accounts.oauth2.revoke(bqAccessToken, () => {});
+  }
+  bqAccessToken = null;
+  bqTokenExpiresAt = 0;
+  showSignedOut();
+}
+
+/** Restore saved parameters from localStorage, or set sane defaults. */
+function loadBQPrefs() {
+  const saved = JSON.parse(localStorage.getItem("bqPrefs") || "{}");
+  // Default to last 30 days at 00:00
+  const now = new Date();
+  const monthAgo = new Date(now.getTime() - 30 * 86400 * 1000);
+  const toLocal = (d) => {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  els.bqStart.value      = saved.startTime || toLocal(monthAgo);
+  els.bqEnd.value        = saved.endTime   || toLocal(now);
+  els.bqMinRating.value  = saved.minRating ?? 600;
+  els.bqHumanOnly.checked = !!saved.humanOnly;
+  refreshSQLPreview();
+}
+
+function saveBQPrefs() {
+  localStorage.setItem("bqPrefs", JSON.stringify({
+    startTime: els.bqStart.value,
+    endTime: els.bqEnd.value,
+    minRating: els.bqMinRating.value,
+    humanOnly: els.bqHumanOnly.checked,
+  }));
+}
+
+// ------------------------------------------------------------
 // Wire up
 // ------------------------------------------------------------
 
@@ -620,6 +891,17 @@ els.hideZero.addEventListener("change", (e) => {
 });
 els.export.addEventListener("click", exportCSV);
 
+// BigQuery wiring
+els.bqSignin.addEventListener("click", signInToBQ);
+els.bqSignout.addEventListener("click", signOutFromBQ);
+els.bqRun.addEventListener("click", runBQAndAnalyze);
+[els.bqStart, els.bqEnd, els.bqMinRating, els.bqHumanOnly].forEach((el) => {
+  el.addEventListener("change", () => {
+    saveBQPrefs();
+    refreshSQLPreview();
+  });
+});
+
 // ------------------------------------------------------------
 // Boot
 // ------------------------------------------------------------
@@ -630,9 +912,12 @@ async function boot() {
     MASTER_CARDS = await res.json();
     MASTER_INDEX = new Map(MASTER_CARDS.map((c) => [c.name.toLowerCase(), c]));
     buildFilterChips();
-    setStatus(`Loaded ${MASTER_CARDS.length} cards from master list. Paste data to begin.`);
+    setStatus(`Loaded ${MASTER_CARDS.length} cards from master list.`);
   } catch (e) {
     setStatus(`Failed to load master card list: ${e.message}. If opening as file://, run a local server instead (see README).`, "error");
   }
+  // Initialize BigQuery panel
+  loadBQPrefs();
+  initBQAuth();
 }
 boot();

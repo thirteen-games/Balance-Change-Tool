@@ -88,6 +88,127 @@ main {
   font-size: 11px;
 }
 
+/* --- BigQuery panel --- */
+
+.bq-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.bq-params .param {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.bq-params .param > span {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bq-params .param input[type="datetime-local"],
+.bq-params .param input[type="number"] {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color-scheme: dark;
+}
+
+.bq-params .param.checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.bq-params .param.checkbox-row > span {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+#bq-sql-preview {
+  margin-top: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+#bq-sql-preview summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sql-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.sql-preview label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.sql-preview pre {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+}
+
+#manual-paste-details {
+  margin-bottom: 0;
+}
+
+#manual-paste-details > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+
+#manual-paste-details > summary::before {
+  content: "▶";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+#manual-paste-details[open] > summary::before { transform: rotate(90deg); }
+
+#manual-paste-details > summary::-webkit-details-marker { display: none; }
+
 /* --- Paste inputs --- */
 
 .paste-grid {

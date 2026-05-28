@@ -17,43 +17,98 @@
       document.head.appendChild(link);
     })();
   </script>
+  <!-- Google Identity Services (OAuth for BigQuery) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <header>
     <h1>Balance Change Tool</h1>
     <p class="subtitle">
-      Paste win and loss counts from your SQL query. The tool joins them against the
-      master card list (199 cards), then computes a <strong>Buff/Rework rating</strong>
-      and an <strong>Overall rating</strong> for each card.
+      Pull win/loss data from BigQuery for any date range, then sort and filter
+      the 199-card master list by <strong>Buff/Rework rating</strong> and
+      <strong>Overall rating</strong> to find candidates for balance changes.
     </p>
   </header>
 
   <main>
-    <section class="panel" id="input-panel">
-      <h2>1. Paste data</h2>
+    <section class="panel" id="bq-panel">
+      <h2>1. Pull from BigQuery</h2>
       <p class="help">
-        Each line is <code>card name</code> followed by a number, separated by tab,
-        comma, pipe, or multiple spaces. Headers are auto-stripped.
-        Names are matched case-insensitively against the master list.
+        Set the parameters, sign in with your Google account, and click
+        <strong>Run query</strong>. The tool runs two queries (wins + losses)
+        against <code>market-party-289715.nova_island_analytics_prod.match</code>
+        and fills the data below automatically.
       </p>
 
-      <div class="paste-grid">
-        <div>
-          <label for="wins-input">Wins by card</label>
-          <textarea id="wins-input" spellcheck="false" placeholder="Air Attack&#9;293&#10;Armory&#9;152&#10;..."></textarea>
-        </div>
-        <div>
-          <label for="losses-input">Losses by card</label>
-          <textarea id="losses-input" spellcheck="false" placeholder="Air Attack&#9;129&#10;Armory&#9;84&#10;..."></textarea>
-        </div>
+      <div class="bq-params">
+        <label class="param">
+          <span>Start</span>
+          <input type="datetime-local" id="bq-start" />
+        </label>
+        <label class="param">
+          <span>End</span>
+          <input type="datetime-local" id="bq-end" />
+        </label>
+        <label class="param">
+          <span>Min rating</span>
+          <input type="number" id="bq-min-rating" value="600" min="0" step="50" />
+        </label>
+        <label class="param checkbox-row">
+          <input type="checkbox" id="bq-human-only" />
+          <span>Human vs human only</span>
+        </label>
       </div>
 
       <div class="actions">
-        <button id="analyze-btn" type="button" class="primary">Analyze</button>
-        <button id="sample-btn" type="button">Load sample data</button>
-        <button id="clear-btn" type="button">Clear</button>
-        <span id="parse-status" class="status"></span>
+        <button id="bq-signin-btn" type="button" class="primary" disabled>Sign in with Google</button>
+        <button id="bq-run-btn" type="button" class="primary" hidden>Run query</button>
+        <button id="bq-signout-btn" type="button" hidden>Sign out</button>
+        <span id="bq-user" class="status"></span>
+        <span id="bq-status" class="status"></span>
       </div>
+
+      <details id="bq-sql-preview">
+        <summary>Show generated SQL</summary>
+        <div class="sql-preview">
+          <div>
+            <label>Wins query</label>
+            <pre id="bq-sql-wins"></pre>
+          </div>
+          <div>
+            <label>Losses query</label>
+            <pre id="bq-sql-losses"></pre>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel" id="input-panel">
+      <details id="manual-paste-details">
+        <summary><h2 style="display:inline; margin:0;">2. Or paste data manually</h2></summary>
+        <p class="help" style="margin-top:12px;">
+          Each line is <code>card name</code> followed by a number, separated by tab,
+          comma, pipe, or multiple spaces. Headers are auto-stripped.
+          Names are matched case-insensitively against the master list.
+        </p>
+
+        <div class="paste-grid">
+          <div>
+            <label for="wins-input">Wins by card</label>
+            <textarea id="wins-input" spellcheck="false" placeholder="Air Attack&#9;293&#10;Armory&#9;152&#10;..."></textarea>
+          </div>
+          <div>
+            <label for="losses-input">Losses by card</label>
+            <textarea id="losses-input" spellcheck="false" placeholder="Air Attack&#9;129&#10;Armory&#9;84&#10;..."></textarea>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="analyze-btn" type="button" class="primary">Analyze</button>
+          <button id="sample-btn" type="button">Load sample data</button>
+          <button id="clear-btn" type="button">Clear</button>
+          <span id="parse-status" class="status"></span>
+        </div>
+      </details>
 
       <details id="diagnostics" hidden>
         <summary>Diagnostics</summary>
