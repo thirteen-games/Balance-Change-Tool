@@ -460,6 +460,38 @@ button.primary:hover {
   color: var(--text);
 }
 
+.agg-table .total-row td {
+  background: var(--panel-2);
+  font-weight: 600;
+  border-top: 1px solid var(--accent);
+}
+
+/* Pro stats panel reuses .aggregates / .agg-table styles, but its two
+   tables tend to need a bit more width. */
+.pro-stats-body {
+  grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+}
+
+/* Per-class row tint + bold colored pro name. The .group-label inside
+   gets the full class color (defined below). */
+.pro-row.pro-Boom       td { background-color: rgba(255, 107, 53, 0.22); }
+.pro-row.pro-Cosmic     td { background-color: rgba(179, 136, 255, 0.22); }
+.pro-row.pro-Cyber      td { background-color: rgba(0,   212, 255, 0.22); }
+.pro-row.pro-Distortion td { background-color: rgba(255, 77,  141, 0.22); }
+.pro-row.pro-Energy     td { background-color: rgba(255, 213, 77,  0.22); }
+.pro-row.pro-Floral     td { background-color: rgba(105, 224, 124, 0.22); }
+.pro-row.pro-Magic      td { background-color: rgba(122, 168, 255, 0.22); }
+.pro-row.pro-Moxie      td { background-color: rgba(255, 133, 193, 0.22); }
+
+.pro-row.pro-Boom       .group-label { color: var(--class-Boom); font-weight: 600; }
+.pro-row.pro-Cosmic     .group-label { color: var(--class-Cosmic); font-weight: 600; }
+.pro-row.pro-Cyber      .group-label { color: var(--class-Cyber); font-weight: 600; }
+.pro-row.pro-Distortion .group-label { color: var(--class-Distortion); font-weight: 600; }
+.pro-row.pro-Energy     .group-label { color: var(--class-Energy); font-weight: 600; }
+.pro-row.pro-Floral     .group-label { color: var(--class-Floral); font-weight: 600; }
+.pro-row.pro-Magic      .group-label { color: var(--class-Magic); font-weight: 600; }
+.pro-row.pro-Moxie      .group-label { color: var(--class-Moxie); font-weight: 600; }
+
 /* --- Filters --- */
 
 .filters {

@@ -40,6 +40,7 @@ let MASTER_INDEX = new Map(); // lowercased name -> master card
 const state = {
   results: [],            // analyzed rows (Period A); each row may have _B sibling fields when comparing
   resultsB: null,         // Period B analyzed rows (when comparing), keyed by name
+  proStats: null,         // { pvp: [{name, ...}], all: [{name, ...}], totals: {pvp, all} } or null when not from BQ
   compareMode: false,     // are we showing two-period comparison?
   unmatchedWins: [],      // names in wins paste not in master
   unmatchedLosses: [],    // names in losses paste not in master
@@ -91,6 +92,8 @@ const els = {
   results: $("#results-panel"),
   summary: $("#summary"),
   aggregatesBody: $("#aggregates-body"),
+  proStats: $("#pro-stats"),
+  proStatsBody: $("#pro-stats-body"),
   search: $("#search-input"),
   classFilters: $("#class-filters"),
   typeFilters: $("#type-filters"),
@@ -671,6 +674,219 @@ GROUP BY CardName
 ORDER BY CardName`;
 }
 
+// ---- Pro list (canonical display order + class color) --------------------
+// Edit this table to add new pros, change order, or fix a class mapping.
+const PRO_ORDER = ["Max", "DrBoom", "Flora", "Jack", "Aster", "Slayborg", "Camille", "Sydney"];
+const PRO_CLASS = {
+  Max:      "Energy",
+  DrBoom:   "Boom",
+  Flora:    "Floral",
+  Jack:     "Moxie",
+  Aster:    "Cosmic",
+  Slayborg: "Cyber",
+  Camille:  "Magic",
+  Sydney:   "Distortion",
+};
+
+// ---- Pro queries ----------------------------------------------------------
+// queryType: "wins" -> match_end + winner filter
+//            "played" -> match_start, no winner filter
+// humanOnly: when true, adds the bot_match=false filter (PvP-only data set)
+function buildProQuery({ startTime, endTime, humanOnly, queryType }) {
+  const start = fmtBQTimestamp(startTime);
+  const end   = fmtBQTimestamp(endTime);
+  const tbl   = `\`${BQ_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\``;
+  const event = queryType === "wins" ? "match_end" : "match_start";
+  // Wins query also filters for winner-side rows and excludes another Rookie variant
+  const winnerLine = queryType === "wins"
+    ? `\n    AND metadata LIKE '%inner%'\n    AND metadata NOT LIKE '%Rookie 100/50%'`
+    : "";
+  const humanLine = humanOnly
+    ? `\n    AND JSON_VALUE(metadata, '$.bot_match') = 'false'`
+    : "";
+
+  return `SELECT
+    JSON_EXTRACT(metadata, "$.professional") AS pro_name,
+    COUNT(time) AS pro_count
+FROM ${tbl}
+WHERE event = '${event}'
+    AND player_id NOT LIKE '%Bot%'
+    AND player_id NOT LIKE '%bot%'
+    AND player_id NOT LIKE '%opponent%'
+    AND time >= "${start}"
+    AND time <= "${end}"
+    AND metadata NOT LIKE '%Tutorial Cold Boot%'
+    AND metadata NOT LIKE '%map":"Rookie 100%'${winnerLine}
+    AND metadata LIKE '%ranked":"true%'${humanLine}
+GROUP BY pro_name`;
+}
+
+/** Strip surrounding double quotes returned by JSON_EXTRACT. */
+function stripJSONQuotes(s) {
+  if (s == null) return s;
+  const str = String(s);
+  if (str.length >= 2 && str.startsWith('"') && str.endsWith('"')) {
+    return str.slice(1, -1);
+  }
+  return str;
+}
+
+/**
+ * Combine the wins and played query results into per-pro stat rows.
+ * Returns { rows, totals } where:
+ *   rows  = [{ name, wins, played, losses, winRate, playRate, adjWinRate }, ...]
+ *   totals = { wins, played, losses, winRate, adjWinRate }
+ */
+function computeProStats(winsBQ, playedBQ) {
+  const mapW = new Map();
+  for (const r of winsBQ) {
+    const name = stripJSONQuotes(r.pro_name);
+    if (!name) continue;
+    mapW.set(name, (mapW.get(name) || 0) + (Number(r.pro_count) || 0));
+  }
+  const mapP = new Map();
+  for (const r of playedBQ) {
+    const name = stripJSONQuotes(r.pro_name);
+    if (!name) continue;
+    mapP.set(name, (mapP.get(name) || 0) + (Number(r.pro_count) || 0));
+  }
+  // Union of all pro names that appear in either set
+  const names = new Set([...mapW.keys(), ...mapP.keys()]);
+
+  const totalPlayed = [...mapP.values()].reduce((a, n) => a + n, 0);
+  const totalWins   = [...mapW.values()].reduce((a, n) => a + n, 0);
+  const overallWR   = totalPlayed > 0 ? totalWins / totalPlayed : 0;
+
+  const rows = [...names].map((name) => {
+    const wins   = mapW.get(name) || 0;
+    const played = mapP.get(name) || 0;
+    const losses = Math.max(0, played - wins);
+    const winRate    = played > 0 ? wins / played : 0;
+    const playRate   = totalPlayed > 0 ? played / totalPlayed : 0;
+    const adjWinRate = overallWR > 0 ? (winRate * 0.5) / overallWR : 0;
+    return { name, cls: PRO_CLASS[name] || null, wins, played, losses, winRate, playRate, adjWinRate };
+  }).sort((a, b) => {
+    // Canonical PRO_ORDER first; unknown pros at the end, alphabetical
+    const ai = PRO_ORDER.indexOf(a.name);
+    const bi = PRO_ORDER.indexOf(b.name);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const totals = {
+    wins: totalWins, played: totalPlayed, losses: totalPlayed - totalWins,
+    winRate: overallWR,
+    adjWinRate: 0.5, // by definition, the overall normalized adj is 0.5
+  };
+  return { rows, totals };
+}
+
+/**
+ * Build the joined Pro stats object for both PvP and All datasets, then
+ * compute the per-pro "PvP %" (each pro's PvP_played / All_played).
+ * If period B data is provided, attach deltaWinRate / deltaPlayRate fields.
+ */
+function buildProStats({ pvpWins, pvpPlayed, allWins, allPlayed }, optB) {
+  const pvp = computeProStats(pvpWins, pvpPlayed);
+  const all = computeProStats(allWins, allPlayed);
+
+  // Attach PvP% to each PvP row (per pro: pvp_played / all_played)
+  const allMap = new Map(all.rows.map((r) => [r.name, r]));
+  pvp.rows.forEach((r) => {
+    const allRow = allMap.get(r.name);
+    r.pvpPct = allRow && allRow.played > 0 ? r.played / allRow.played : 0;
+  });
+  pvp.totals.pvpPct = all.totals.played > 0 ? pvp.totals.played / all.totals.played : 0;
+
+  // Optional comparison deltas vs period B
+  if (optB) {
+    const bPvpMap = new Map(optB.pvp.rows.map((r) => [r.name, r]));
+    const bAllMap = new Map(optB.all.rows.map((r) => [r.name, r]));
+    pvp.rows.forEach((r) => {
+      const b = bPvpMap.get(r.name);
+      r.deltaWinRate  = b ? r.winRate  - b.winRate  : null;
+      r.deltaPlayRate = b ? r.playRate - b.playRate : null;
+    });
+    all.rows.forEach((r) => {
+      const b = bAllMap.get(r.name);
+      r.deltaWinRate  = b ? r.winRate  - b.winRate  : null;
+      r.deltaPlayRate = b ? r.playRate - b.playRate : null;
+    });
+  }
+  return { pvp, all };
+}
+
+function renderProStats(stats) {
+  if (!stats) {
+    els.proStats.hidden = true;
+    return;
+  }
+  els.proStats.hidden = false;
+
+  const groupLabel = (txt) => `<span class="group-label">${esc(txt)}</span>`;
+  const deltaCol = { label: "Δ WR", cell: (r) => fmtDelta(r.deltaWinRate, "pct1", true) };
+
+  // ---- PvP table ----
+  const pvpCols = [
+    { label: "PvP %",   cell: (r) => pct(r.pvpPct, 1) },
+    { label: "Pro",     cell: (r) => groupLabel(r.name) },
+    { label: "Wins",    cell: (r) => num(r.wins) },
+    { label: "Played",  cell: (r) => num(r.played) },
+    { label: "Play %",  cell: (r) => pct(r.playRate, 1) },
+    { label: "WR",      cell: (r) => pct(r.winRate, 1) },
+  ];
+  if (state.compareMode) pvpCols.push(deltaCol);
+
+  // Totals row uses the same column count; some cells are blank
+  const pvpTotalsRow = {
+    pvpPct:   stats.pvp.totals.pvpPct,
+    name:     "Total",
+    wins:     stats.pvp.totals.wins,
+    played:   stats.pvp.totals.played,
+    playRate: 1,
+    winRate:  stats.pvp.totals.winRate,
+    deltaWinRate: null,
+  };
+
+  // ---- All table ----
+  const allCols = [
+    { label: "Pro",     cell: (r) => groupLabel(r.name) },
+    { label: "Wins",    cell: (r) => num(r.wins) },
+    { label: "Played",  cell: (r) => num(r.played) },
+    { label: "Play %",  cell: (r) => pct(r.playRate, 1) },
+    { label: "WR",      cell: (r) => pct(r.winRate, 1) },
+    { label: "Adj WR",  cell: (r) => pct(r.adjWinRate, 1) },
+  ];
+  if (state.compareMode) allCols.push(deltaCol);
+
+  const allTotalsRow = {
+    name:       "Total",
+    wins:       stats.all.totals.wins,
+    played:     stats.all.totals.played,
+    playRate:   1,
+    winRate:    stats.all.totals.winRate,
+    adjWinRate: 0.5,
+    deltaWinRate: null,
+  };
+
+  const renderWithTotals = (title, rows, totalsRow, cols) => {
+    const ths = cols.map((c) => `<th>${c.label}</th>`).join("");
+    const trs = rows.map((r) => {
+      const cls = r.cls ? `pro-row pro-${r.cls}` : "pro-row";
+      return `<tr class="${cls}">${cols.map((c) => `<td>${c.cell(r)}</td>`).join("")}</tr>`;
+    }).join("");
+    const totals = `<tr class="total-row">${cols.map((c) => `<td>${c.cell(totalsRow)}</td>`).join("")}</tr>`;
+    return `<div class="agg-table"><h3>${esc(title)}</h3>
+      <table><thead><tr>${ths}</tr></thead><tbody>${trs}${totals}</tbody></table></div>`;
+  };
+
+  els.proStatsBody.innerHTML =
+    renderWithTotals("PvP",  stats.pvp.rows, pvpTotalsRow, pvpCols) +
+    renderWithTotals("All",  stats.all.rows, allTotalsRow, allCols);
+}
+
 function getBQParams() {
   return {
     startTime: els.bqStart.value,
@@ -808,28 +1024,69 @@ async function runBQAndAnalyze() {
   }
 
   els.bqRun.disabled = true;
-  setBQStatus(compareMode ? "Running 4 queries..." : "Running 2 queries...", "");
+  const qCount = compareMode ? 12 : 6;
+  setBQStatus(`Running ${qCount} queries...`, "");
   refreshSQLPreview();
 
   try {
     const t0 = performance.now();
-    const queries = [
+
+    // Card queries: 2 per period
+    const cardQs = [
       runBQQuery(buildBQQuery({ ...pA, resultType: "winner" })),
       runBQQuery(buildBQQuery({ ...pA, resultType: "loser" })),
     ];
     if (compareMode) {
-      queries.push(runBQQuery(buildBQQuery({ ...pB, resultType: "winner" })));
-      queries.push(runBQQuery(buildBQQuery({ ...pB, resultType: "loser" })));
+      cardQs.push(runBQQuery(buildBQQuery({ ...pB, resultType: "winner" })));
+      cardQs.push(runBQQuery(buildBQQuery({ ...pB, resultType: "loser" })));
     }
-    const results = await Promise.all(queries);
-    const [winsA, lossesA, winsB, lossesB] = results;
+
+    // Pro queries: 4 per period (PvP wins/played + All wins/played)
+    const proQ = (params, humanOnly, queryType) =>
+      runBQQuery(buildProQuery({ ...params, humanOnly, queryType }));
+    const proQs = [
+      proQ(pA, true,  "wins"),
+      proQ(pA, true,  "played"),
+      proQ(pA, false, "wins"),
+      proQ(pA, false, "played"),
+    ];
+    if (compareMode) {
+      proQs.push(proQ(pB, true,  "wins"));
+      proQs.push(proQ(pB, true,  "played"));
+      proQs.push(proQ(pB, false, "wins"));
+      proQs.push(proQ(pB, false, "played"));
+    }
+
+    const allResults = await Promise.all([...cardQs, ...proQs]);
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+
+    // Split results back out
+    const cardSplit = compareMode ? 4 : 2;
+    const [winsA, lossesA, winsB, lossesB] = allResults.slice(0, cardSplit).concat([undefined, undefined]);
+    const proResults = allResults.slice(cardSplit);
+    const proAOff = 0;
+    const proBOff = compareMode ? 4 : null;
+    const proA = {
+      pvpWins:   proResults[proAOff + 0],
+      pvpPlayed: proResults[proAOff + 1],
+      allWins:   proResults[proAOff + 2],
+      allPlayed: proResults[proAOff + 3],
+    };
+    let proB = null;
+    if (compareMode) {
+      proB = {
+        pvpWins:   proResults[proBOff + 0],
+        pvpPlayed: proResults[proBOff + 1],
+        allWins:   proResults[proBOff + 2],
+        allPlayed: proResults[proBOff + 3],
+      };
+    }
 
     // Period A goes into the visible textareas
     els.wins.value   = rowsToPasteFormat(winsA, "RankedWins");
     els.losses.value = rowsToPasteFormat(lossesA, "RankedLosses");
 
-    // Build maps directly from BQ rows (no textarea round-trip needed)
+    // Build card maps
     const winsMapA   = buildCountMapFromBQ(winsA, "RankedWins");
     const lossesMapA = buildCountMapFromBQ(lossesA, "RankedLosses");
     let optBMaps = null;
@@ -840,19 +1097,25 @@ async function runBQAndAnalyze() {
       };
     }
 
-    // Track unmatched names from Period A
-    const trackUnmatched = (rows, field) =>
+    // Track unmatched card names from Period A
+    const trackUnmatched = (rows) =>
       rows.map((r) => r.CardName).filter((n) => n && !MASTER_INDEX.has(n.toLowerCase()));
-    state.unmatchedWins   = [...new Set(trackUnmatched(winsA,   "RankedWins").map((s) => s.toLowerCase()))]
+    state.unmatchedWins = [...new Set(trackUnmatched(winsA).map((s) => s.toLowerCase()))]
       .map((lc) => winsA.find((r) => r.CardName && r.CardName.toLowerCase() === lc).CardName);
-    state.unmatchedLosses = [...new Set(trackUnmatched(lossesA, "RankedLosses").map((s) => s.toLowerCase()))]
+    state.unmatchedLosses = [...new Set(trackUnmatched(lossesA).map((s) => s.toLowerCase()))]
       .map((lc) => lossesA.find((r) => r.CardName && r.CardName.toLowerCase() === lc).CardName);
 
+    // Compute Pro stats (with B-period deltas if comparing)
+    let proStatsB = null;
+    if (compareMode) proStatsB = buildProStats(proB, null);
+    state.proStats = buildProStats(proA, proStatsB);
+
+    // Card analysis (drives compareMode + renderTable/renderAggregates/renderProStats)
     applyAnalysis(winsMapA, lossesMapA, optBMaps);
 
     const msg = compareMode
-      ? `Fetched 4 queries in ${elapsed}s. Comparing Period A (${winsA.length}/${lossesA.length} rows) vs Period B (${winsB.length}/${lossesB.length} rows).`
-      : `Fetched ${winsA.length} wins rows and ${lossesA.length} losses rows in ${elapsed}s.`;
+      ? `Fetched ${qCount} queries in ${elapsed}s. Comparing Period A vs Period B.`
+      : `Fetched ${qCount} queries in ${elapsed}s.`;
     setBQStatus(msg, "ok");
   } catch (e) {
     setBQStatus(`Query failed: ${e.message}`, "error");
@@ -1017,6 +1280,7 @@ function applyAnalysis(winsMapA, lossesMapA, optBMaps) {
   els.results.hidden = false;
   renderDiagnostics();
   renderAggregates(computeAggregates(state.results, constants, rowsB));
+  renderProStats(state.proStats);
   renderTable();
   return constants;
 }
@@ -1028,6 +1292,8 @@ function runAnalysis() {
     setStatus("Paste some wins or losses data first.", "error");
     return;
   }
+  // Manual paste doesn't carry Pro data — clear any stale Pro stats from a prior BQ run.
+  state.proStats = null;
 
   const winsMap = buildCountMap(winsRows);
   const lossesMap = buildCountMap(lossesRows);
@@ -1104,11 +1370,13 @@ els.clear.addEventListener("click", () => {
   els.wins.value = "";
   els.losses.value = "";
   state.results = [];
+  state.proStats = null;
   state.unmatchedWins = [];
   state.unmatchedLosses = [];
   state.unpastedCards = [];
   els.results.hidden = true;
   els.diagnostics.hidden = true;
+  els.proStats.hidden = true;
   setStatus("", "");
 });
 
