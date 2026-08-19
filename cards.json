@@ -1104,6 +1104,12 @@
     "cost": 1
   },
   {
+    "name": "Time Gate",
+    "class": "Distortion",
+    "type": "Power",
+    "cost": 3
+  },
+  {
     "name": "Time Guru",
     "class": "Distortion",
     "type": "Friend",
