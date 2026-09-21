@@ -66,6 +66,7 @@ const els = {
   bqStartLabel: $("#bq-start-label"),
   bqEndLabel: $("#bq-end-label"),
   bqMinRating: $("#bq-min-rating"),
+  bqMaxRating: $("#bq-max-rating"),
   bqHumanOnly: $("#bq-human-only"),
   bqCompare: $("#bq-compare"),
   bqPeriodB: $("#bq-period-b"),
@@ -635,12 +636,16 @@ function fmtBQTimestamp(dtLocal) {
 }
 
 /** Build the SQL query for either 'winner' or 'loser' results. */
-function buildBQQuery({ startTime, endTime, minRating, humanOnly, resultType }) {
+function buildBQQuery({ startTime, endTime, minRating, maxRating, humanOnly, resultType }) {
   const alias = resultType === "winner" ? "RankedWins" : "RankedLosses";
   const start = fmtBQTimestamp(startTime);
   const end   = fmtBQTimestamp(endTime);
   const botLine = humanOnly
     ? `\n    AND JSON_VALUE(mWin.metadata, '$.bot_match') = 'false'`
+    : "";
+  // maxRating is optional: null/undefined means no upper bound.
+  const maxRatingLine = maxRating != null
+    ? `\n    AND CAST(JSON_VALUE(m.metadata, '$.player.rating') AS INT64) <= ${maxRating}`
     : "";
   const tbl = `\`${BQ_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\``;
 
@@ -669,7 +674,7 @@ WHERE
     AND mWin.player_id NOT LIKE '%Bot_%'
     AND mWin.player_id NOT LIKE '%bot_%'
     AND mWin.player_id NOT LIKE '%pponent%'
-    AND CAST(JSON_VALUE(m.metadata, '$.player.rating') AS INT64) > ${minRating}
+    AND CAST(JSON_VALUE(m.metadata, '$.player.rating') AS INT64) > ${minRating}${maxRatingLine}
 GROUP BY CardName
 ORDER BY CardName`;
 }
@@ -892,8 +897,17 @@ function getBQParams() {
     startTime: els.bqStart.value,
     endTime: els.bqEnd.value,
     minRating: Number(els.bqMinRating.value) || 0,
+    maxRating: getMaxRating(),
     humanOnly: els.bqHumanOnly.checked,
   };
+}
+
+/** Max rating input: blank = no cap (null). */
+function getMaxRating() {
+  const raw = els.bqMaxRating.value.trim();
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 function getBQParamsB() {
@@ -901,6 +915,7 @@ function getBQParamsB() {
     startTime: els.bqStartB.value,
     endTime: els.bqEndB.value,
     minRating: Number(els.bqMinRating.value) || 0, // shared with A
+    maxRating: getMaxRating(),                      // shared with A
     humanOnly: els.bqHumanOnly.checked,             // shared with A
   };
 }
@@ -1012,6 +1027,10 @@ async function runBQAndAnalyze() {
   }
   if (pA.minRating < 0) {
     setBQStatus("Min rating must be ≥ 0.", "error");
+    return;
+  }
+  if (pA.maxRating != null && pA.maxRating <= pA.minRating) {
+    setBQStatus("Max rating must be greater than min rating (or leave it blank for no cap).", "error");
     return;
   }
   let pB = null;
@@ -1209,6 +1228,7 @@ function loadBQPrefs() {
   els.bqStartB.value      = saved.startTimeB || "";
   els.bqEndB.value        = saved.endTimeB   || "";
   els.bqMinRating.value   = saved.minRating ?? 600;
+  els.bqMaxRating.value   = saved.maxRating ?? "";
   els.bqHumanOnly.checked = !!saved.humanOnly;
   els.bqCompare.checked   = !!saved.compare;
   toggleCompareUI();
@@ -1221,6 +1241,7 @@ function saveBQPrefs() {
     startTimeB: els.bqStartB.value,
     endTimeB:   els.bqEndB.value,
     minRating:  els.bqMinRating.value,
+    maxRating:  els.bqMaxRating.value,
     humanOnly:  els.bqHumanOnly.checked,
     compare:    els.bqCompare.checked,
   }));
@@ -1396,7 +1417,7 @@ els.bqSignout.addEventListener("click", signOutFromBQ);
 els.bqRun.addEventListener("click", runBQAndAnalyze);
 els.bqCompare.addEventListener("change", toggleCompareUI);
 els.bqPresetPrev.addEventListener("click", setPeriodBToPrevious);
-[els.bqStart, els.bqEnd, els.bqStartB, els.bqEndB, els.bqMinRating, els.bqHumanOnly].forEach((el) => {
+[els.bqStart, els.bqEnd, els.bqStartB, els.bqEndB, els.bqMinRating, els.bqMaxRating, els.bqHumanOnly].forEach((el) => {
   el.addEventListener("change", () => {
     saveBQPrefs();
     refreshSQLPreview();
