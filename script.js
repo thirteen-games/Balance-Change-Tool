@@ -42,6 +42,7 @@ const state = {
   resultsB: null,         // Period B analyzed rows (when comparing), keyed by name
   proStats: null,         // { pvp: [{name, ...}], all: [{name, ...}], totals: {pvp, all} } or null when not from BQ
   compareMode: false,     // are we showing two-period comparison?
+  showPvp: false,         // show PvP-only Win % / % Play columns (BQ run, not comparing, human-only off)
   unmatchedWins: [],      // names in wins paste not in master
   unmatchedLosses: [],    // names in losses paste not in master
   unpastedCards: [],      // master cards with zero wins+losses
@@ -418,8 +419,23 @@ const DELTA_COLS = [
   { key: "deltaOvrRating",  label: "Δ Ovr",    type: "number", numeric: true, fmt: (v) => fmtDelta(v, "num2", true) },
 ];
 
+// PvP-only columns: shown when a BQ run was done without the "human vs human"
+// filter and not in compare mode. Inserted right after the % Play column so
+// they sit beside their all-games counterparts.
+const PVP_COLS = [
+  { key: "pvpWinRate",   label: "PvP Win %", type: "number", numeric: true, fmt: (v) => v ? (v * 100).toFixed(1) + "%" : "—" },
+  { key: "pvpPctPlayed", label: "PvP % Play", type: "number", numeric: true, fmt: (v) => v ? (v * 100).toFixed(2) + "%" : "—" },
+];
+
 function getCols() {
-  return state.compareMode ? [...BASE_COLS, ...DELTA_COLS] : BASE_COLS;
+  if (state.compareMode) return [...BASE_COLS, ...DELTA_COLS];
+  if (state.showPvp) {
+    const cols = [...BASE_COLS];
+    const at = cols.findIndex((c) => c.key === "pctPlayed") + 1;
+    cols.splice(at, 0, ...PVP_COLS);
+    return cols;
+  }
+  return BASE_COLS;
 }
 
 function fmtDelta(v, fmt, positiveIsGood) {
@@ -607,6 +623,7 @@ function exportCSV() {
       let v = r[c.key];
       if (typeof v === "number") {
         if (c.key === "winRate" || c.key === "pctPlayed" || c.key === "winRate2" ||
+            c.key === "pvpWinRate" || c.key === "pvpPctPlayed" ||
             c.key === "deltaWinRate" || c.key === "deltaPctPlayed") v = (v * 100).toFixed(3);
         else if (c.key === "buffRating" || c.key === "ovrRating" ||
                  c.key === "deltaBuffRating" || c.key === "deltaOvrRating") v = v.toFixed(4);
@@ -1042,15 +1059,19 @@ async function runBQAndAnalyze() {
     }
   }
 
+  // Extra PvP-only card queries: only when not comparing and the main data
+  // includes bot games (human-only off). They feed the PvP Win % / % Play columns.
+  const wantPvp = !compareMode && !pA.humanOnly;
+
   els.bqRun.disabled = true;
-  const qCount = compareMode ? 12 : 6;
+  const qCount = compareMode ? 12 : (wantPvp ? 8 : 6);
   setBQStatus(`Running ${qCount} queries...`, "");
   refreshSQLPreview();
 
   try {
     const t0 = performance.now();
 
-    // Card queries: 2 per period
+    // Card queries: 2 per period, plus 2 PvP-only when wantPvp
     const cardQs = [
       runBQQuery(buildBQQuery({ ...pA, resultType: "winner" })),
       runBQQuery(buildBQQuery({ ...pA, resultType: "loser" })),
@@ -1058,6 +1079,9 @@ async function runBQAndAnalyze() {
     if (compareMode) {
       cardQs.push(runBQQuery(buildBQQuery({ ...pB, resultType: "winner" })));
       cardQs.push(runBQQuery(buildBQQuery({ ...pB, resultType: "loser" })));
+    } else if (wantPvp) {
+      cardQs.push(runBQQuery(buildBQQuery({ ...pA, humanOnly: true, resultType: "winner" })));
+      cardQs.push(runBQQuery(buildBQQuery({ ...pA, humanOnly: true, resultType: "loser" })));
     }
 
     // Pro queries: 4 per period (PvP wins/played + All wins/played)
@@ -1080,8 +1104,12 @@ async function runBQAndAnalyze() {
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
 
     // Split results back out
-    const cardSplit = compareMode ? 4 : 2;
-    const [winsA, lossesA, winsB, lossesB] = allResults.slice(0, cardSplit).concat([undefined, undefined]);
+    const cardSplit = cardQs.length;
+    const [winsA, lossesA, extraWins, extraLosses] = allResults.slice(0, cardSplit).concat([undefined, undefined]);
+    const winsB      = compareMode ? extraWins   : undefined;
+    const lossesB    = compareMode ? extraLosses : undefined;
+    const pvpWinsA   = wantPvp ? extraWins   : undefined;
+    const pvpLossesA = wantPvp ? extraLosses : undefined;
     const proResults = allResults.slice(cardSplit);
     const proAOff = 0;
     const proBOff = compareMode ? 4 : null;
@@ -1115,6 +1143,13 @@ async function runBQAndAnalyze() {
         losses: buildCountMapFromBQ(lossesB, "RankedLosses"),
       };
     }
+    let optPvpMaps = null;
+    if (wantPvp) {
+      optPvpMaps = {
+        wins:   buildCountMapFromBQ(pvpWinsA, "RankedWins"),
+        losses: buildCountMapFromBQ(pvpLossesA, "RankedLosses"),
+      };
+    }
 
     // Track unmatched card names from Period A
     const trackUnmatched = (rows) =>
@@ -1130,11 +1165,13 @@ async function runBQAndAnalyze() {
     state.proStats = buildProStats(proA, proStatsB);
 
     // Card analysis (drives compareMode + renderTable/renderAggregates/renderProStats)
-    applyAnalysis(winsMapA, lossesMapA, optBMaps);
+    applyAnalysis(winsMapA, lossesMapA, optBMaps, optPvpMaps);
 
     const msg = compareMode
       ? `Fetched ${qCount} queries in ${elapsed}s. Comparing Period A vs Period B.`
-      : `Fetched ${qCount} queries in ${elapsed}s.`;
+      : wantPvp
+        ? `Fetched ${qCount} queries in ${elapsed}s. PvP Win % / % Play columns added.`
+        : `Fetched ${qCount} queries in ${elapsed}s.`;
     setBQStatus(msg, "ok");
   } catch (e) {
     setBQStatus(`Query failed: ${e.message}`, "error");
@@ -1256,12 +1293,31 @@ function saveBQPrefs() {
  * BigQuery (runBQAndAnalyze) so the comparison-mode logic lives in one place.
  *
  * If optBMaps is provided ({wins, losses}), compute deltas vs Period B.
+ * If optPvpMaps is provided ({wins, losses}) and not comparing, attach
+ * PvP-only win rate and % play per card (pvpWinRate, pvpPctPlayed).
  */
-function applyAnalysis(winsMapA, lossesMapA, optBMaps) {
+function applyAnalysis(winsMapA, lossesMapA, optBMaps, optPvpMaps) {
   const { rows: rowsA, constants } = analyze(winsMapA, lossesMapA);
 
   let finalRows = rowsA;
   let rowsB = null;
+  const showPvp = !!optPvpMaps && !optBMaps;
+
+  if (showPvp) {
+    const { rows: rowsP } = analyze(optPvpMaps.wins, optPvpMaps.losses);
+    const pByName = new Map(rowsP.map((r) => [r.name, r]));
+    finalRows = rowsA.map((a) => {
+      const p = pByName.get(a.name);
+      return {
+        ...a,
+        pvpWins:      p ? p.wins : 0,
+        pvpLosses:    p ? p.losses : 0,
+        pvpTotal:     p ? p.total : 0,
+        pvpWinRate:   p ? p.winRate : 0,    // PvP wins / PvP total
+        pvpPctPlayed: p ? p.pctPlayed : 0,  // share of all PvP card plays
+      };
+    });
+  }
 
   if (optBMaps) {
     const { rows: rB } = analyze(optBMaps.wins, optBMaps.losses);
@@ -1295,6 +1351,7 @@ function applyAnalysis(winsMapA, lossesMapA, optBMaps) {
   state.results = finalRows;
   state.resultsB = rowsB;
   state.compareMode = !!optBMaps;
+  state.showPvp = showPvp;
   state.constants = constants;
   state.unpastedCards = rowsA.filter((r) => r.total === 0).map((r) => r.name);
 
@@ -1330,7 +1387,7 @@ function runAnalysis() {
     lossesRows.find((r) => r.name.toLowerCase() === lc).name
   );
 
-  const constants = applyAnalysis(winsMap, lossesMap, null);
+  const constants = applyAnalysis(winsMap, lossesMap, null, null);
 
   setStatus(
     `Parsed ${winsRows.length} win rows, ${lossesRows.length} loss rows. ` +
@@ -1392,6 +1449,7 @@ els.clear.addEventListener("click", () => {
   els.losses.value = "";
   state.results = [];
   state.proStats = null;
+  state.showPvp = false;
   state.unmatchedWins = [];
   state.unmatchedLosses = [];
   state.unpastedCards = [];
