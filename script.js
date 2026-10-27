@@ -714,7 +714,7 @@ const PRO_CLASS = {
 // queryType: "wins" -> match_end + winner filter
 //            "played" -> match_start, no winner filter
 // humanOnly: when true, adds the bot_match=false filter (PvP-only data set)
-function buildProQuery({ startTime, endTime, humanOnly, queryType }) {
+function buildProQuery({ startTime, endTime, minRating, maxRating, humanOnly, queryType }) {
   const start = fmtBQTimestamp(startTime);
   const end   = fmtBQTimestamp(endTime);
   const tbl   = `\`${BQ_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\``;
@@ -726,6 +726,13 @@ function buildProQuery({ startTime, endTime, humanOnly, queryType }) {
   const humanLine = humanOnly
     ? `\n    AND JSON_VALUE(metadata, '$.bot_match') = 'false'`
     : "";
+  // Same rating window as the card queries, so Pro stats and card stats
+  // describe the same population of games.
+  const ratingLines =
+    `\n    AND CAST(JSON_VALUE(metadata, '$.player.rating') AS INT64) > ${minRating || 0}` +
+    (maxRating != null
+      ? `\n    AND CAST(JSON_VALUE(metadata, '$.player.rating') AS INT64) <= ${maxRating}`
+      : "");
 
   return `SELECT
     JSON_EXTRACT(metadata, "$.professional") AS pro_name,
@@ -739,7 +746,7 @@ WHERE event = '${event}'
     AND time <= "${end}"
     AND metadata NOT LIKE '%Tutorial Cold Boot%'
     AND metadata NOT LIKE '%map":"Rookie 100%'${winnerLine}
-    AND metadata LIKE '%ranked":"true%'${humanLine}
+    AND metadata LIKE '%ranked":"true%'${humanLine}${ratingLines}
 GROUP BY pro_name`;
 }
 
