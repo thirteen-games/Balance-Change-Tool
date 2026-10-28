@@ -750,7 +750,7 @@ function buildProQuery({ startTime, endTime, minRating, maxRating, humanOnly, qu
     SELECT match_id
     FROM ${tbl}
     WHERE event = 'match_start'
-        AND time >= TIMESTAMP_SUB(TIMESTAMP "${start}", INTERVAL 1 DAY)
+        AND time >= DATETIME_SUB(DATETIME "${start}", INTERVAL 1 DAY)
         AND time <= "${end}"
         AND JSON_VALUE(metadata, '$.professional') IS NOT NULL
     GROUP BY match_id
