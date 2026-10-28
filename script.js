@@ -938,7 +938,6 @@ function renderProStats(stats) {
     { label: "Played",  cell: (r) => num(r.played) },
     { label: "Play %",  cell: (r) => pct(r.playRate, 1) },
     { label: "WR",      cell: (r) => pct(r.winRate, 1) },
-    { label: "Adj WR",  cell: (r) => pct(r.adjWinRate, 1) },
   ];
   if (state.compareMode) pvpCols.push(deltaCol);
 
@@ -950,7 +949,6 @@ function renderProStats(stats) {
     played:   stats.pvp.totals.played,
     playRate: 1,
     winRate:  stats.pvp.totals.winRate,
-    adjWinRate: 0.5,
     deltaWinRate: null,
   };
 
@@ -983,7 +981,6 @@ function renderProStats(stats) {
     played:   stats.pvpNm.totals.played,
     playRate: 1,
     winRate:  stats.pvpNm.totals.winRate,
-    adjWinRate: 0.5,
     deltaWinRate: null,
   };
   const allNmTotalsRow = {
