@@ -652,6 +652,34 @@ function fmtBQTimestamp(dtLocal) {
   return dtLocal.replace("T", " ") + ":00";
 }
 
+// ---- Rating window (shared by card and Pro queries) ----------------------
+// The rating filter is applied per MATCH, not per player row: a match is in
+// the window when at least one human player's rating (from their own
+// match_start row) is inside it, and then BOTH sides of that match count.
+// Filtering per player row biased PvP data: a match between an in-window and
+// an out-of-window player counted only the in-window side, which is usually
+// the favored side, so win rates drifted above 50%. Bot matches have a single
+// human row and the bot's rating tracks the human's, so for them this is
+// equivalent to the old per-row filter.
+// Window starts a day early so a match that began just before the period but
+// ended inside it is still classified. maxRating null = no upper bound.
+function buildWindowMatchesCTE({ start, end, minRating, maxRating, tbl }) {
+  const maxLine = maxRating != null
+    ? `\n        AND CAST(JSON_VALUE(metadata, '$.player.rating') AS INT64) <= ${maxRating}`
+    : "";
+  return `window_matches AS (
+    SELECT DISTINCT match_id
+    FROM ${tbl}
+    WHERE event = 'match_start'
+        AND player_id NOT LIKE '%Bot%'
+        AND player_id NOT LIKE '%bot%'
+        AND player_id NOT LIKE '%pponent%'
+        AND time >= DATETIME_SUB(DATETIME "${start}", INTERVAL 1 DAY)
+        AND time <= "${end}"
+        AND CAST(JSON_VALUE(metadata, '$.player.rating') AS INT64) > ${minRating || 0}${maxLine}
+)`;
+}
+
 /** Build the SQL query for either 'winner' or 'loser' results. */
 function buildBQQuery({ startTime, endTime, minRating, maxRating, humanOnly, resultType }) {
   const alias = resultType === "winner" ? "RankedWins" : "RankedLosses";
@@ -660,13 +688,11 @@ function buildBQQuery({ startTime, endTime, minRating, maxRating, humanOnly, res
   const botLine = humanOnly
     ? `\n    AND JSON_VALUE(mWin.metadata, '$.bot_match') = 'false'`
     : "";
-  // maxRating is optional: null/undefined means no upper bound.
-  const maxRatingLine = maxRating != null
-    ? `\n    AND CAST(JSON_VALUE(m.metadata, '$.player.rating') AS INT64) <= ${maxRating}`
-    : "";
   const tbl = `\`${BQ_PROJECT_ID}.${BQ_DATASET}.${BQ_TABLE}\``;
+  const windowCTE = buildWindowMatchesCTE({ start, end, minRating, maxRating, tbl });
 
-  return `SELECT
+  return `WITH ${windowCTE}
+SELECT
     JSON_VALUE(m.metadata, '$.card.name') AS CardName
     , COUNT(mWin.time) AS ${alias}
 FROM ${tbl} AS m
@@ -691,7 +717,7 @@ WHERE
     AND mWin.player_id NOT LIKE '%Bot_%'
     AND mWin.player_id NOT LIKE '%bot_%'
     AND mWin.player_id NOT LIKE '%pponent%'
-    AND CAST(JSON_VALUE(m.metadata, '$.player.rating') AS INT64) > ${minRating}${maxRatingLine}
+    AND m.match_id IN (SELECT match_id FROM window_matches)
 GROUP BY CardName
 ORDER BY CardName`;
 }
@@ -738,15 +764,12 @@ function buildProQuery({ startTime, endTime, minRating, maxRating, humanOnly, qu
   const humanLine = humanOnly
     ? `\n    AND JSON_VALUE(metadata, '$.bot_match') = 'false'`
     : "";
-  // Same rating window as the card queries, so Pro stats and card stats
-  // describe the same population of games.
-  const ratingLines =
-    `\n    AND CAST(JSON_VALUE(metadata, '$.player.rating') AS INT64) > ${minRating || 0}` +
-    (maxRating != null
-      ? `\n    AND CAST(JSON_VALUE(metadata, '$.player.rating') AS INT64) <= ${maxRating}`
-      : "");
+  // Same per-match rating window as the card queries, so Pro stats and card
+  // stats describe the same population of games.
+  const windowCTE = buildWindowMatchesCTE({ start, end, minRating, maxRating, tbl });
 
-  return `WITH mirror_matches AS (
+  return `WITH ${windowCTE},
+mirror_matches AS (
     SELECT match_id
     FROM ${tbl}
     WHERE event = 'match_start'
@@ -771,7 +794,8 @@ WHERE event = '${event}'
     AND time <= "${end}"
     AND metadata NOT LIKE '%Tutorial Cold Boot%'
     AND metadata NOT LIKE '%map":"Rookie 100%'${winnerLine}
-    AND metadata LIKE '%ranked":"true%'${humanLine}${ratingLines}
+    AND metadata LIKE '%ranked":"true%'${humanLine}
+    AND m.match_id IN (SELECT match_id FROM window_matches)
 GROUP BY pro_name`;
 }
 
@@ -914,6 +938,7 @@ function renderProStats(stats) {
     { label: "Played",  cell: (r) => num(r.played) },
     { label: "Play %",  cell: (r) => pct(r.playRate, 1) },
     { label: "WR",      cell: (r) => pct(r.winRate, 1) },
+    { label: "Adj WR",  cell: (r) => pct(r.adjWinRate, 1) },
   ];
   if (state.compareMode) pvpCols.push(deltaCol);
 
@@ -925,6 +950,7 @@ function renderProStats(stats) {
     played:   stats.pvp.totals.played,
     playRate: 1,
     winRate:  stats.pvp.totals.winRate,
+    adjWinRate: 0.5,
     deltaWinRate: null,
   };
 
@@ -957,6 +983,7 @@ function renderProStats(stats) {
     played:   stats.pvpNm.totals.played,
     playRate: 1,
     winRate:  stats.pvpNm.totals.winRate,
+    adjWinRate: 0.5,
     deltaWinRate: null,
   };
   const allNmTotalsRow = {
