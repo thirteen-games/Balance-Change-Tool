@@ -472,6 +472,14 @@ button.primary:hover {
   grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
 }
 
+/* Small explanatory line under an agg-table heading (e.g. mirror-match count) */
+.agg-table .agg-note {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
 /* Per-class row tint + bold colored pro name. The .group-label inside
    gets the full class color (defined below). */
 .pro-row.pro-Boom       td { background-color: rgba(255, 107, 53, 0.22); }

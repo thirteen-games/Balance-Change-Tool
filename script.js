@@ -714,6 +714,18 @@ const PRO_CLASS = {
 // queryType: "wins" -> match_end + winner filter
 //            "played" -> match_start, no winner filter
 // humanOnly: when true, adds the bot_match=false filter (PvP-only data set)
+//
+// Each query returns two counts per pro:
+//   pro_count            all matching rows
+//   pro_count_nonmirror  rows whose match is NOT a mirror match
+// A mirror match is one where both sides played the same pro, so the pro is
+// guaranteed exactly one win and one loss and the game carries no signal.
+// Detection: among match_start rows for a match_id (own, opponent and bot
+// rows alike) that carry a professional, at least two distinct player_ids
+// logged one and they all logged the same professional. Requiring two
+// distinct player_ids avoids flagging a match from duplicate/retried events
+// by a single client. The CTE window starts a day early so a match that
+// started just before the period but ended inside it is still classified.
 function buildProQuery({ startTime, endTime, minRating, maxRating, humanOnly, queryType }) {
   const start = fmtBQTimestamp(startTime);
   const end   = fmtBQTimestamp(endTime);
@@ -734,10 +746,23 @@ function buildProQuery({ startTime, endTime, minRating, maxRating, humanOnly, qu
       ? `\n    AND CAST(JSON_VALUE(metadata, '$.player.rating') AS INT64) <= ${maxRating}`
       : "");
 
-  return `SELECT
+  return `WITH mirror_matches AS (
+    SELECT match_id
+    FROM ${tbl}
+    WHERE event = 'match_start'
+        AND time >= TIMESTAMP_SUB(TIMESTAMP "${start}", INTERVAL 1 DAY)
+        AND time <= "${end}"
+        AND JSON_VALUE(metadata, '$.professional') IS NOT NULL
+    GROUP BY match_id
+    HAVING COUNT(DISTINCT player_id) >= 2
+        AND COUNT(DISTINCT JSON_VALUE(metadata, '$.professional')) = 1
+)
+SELECT
     JSON_EXTRACT(metadata, "$.professional") AS pro_name,
-    COUNT(time) AS pro_count
-FROM ${tbl}
+    COUNT(time) AS pro_count,
+    COUNTIF(mm.match_id IS NULL) AS pro_count_nonmirror
+FROM ${tbl} AS m
+LEFT JOIN mirror_matches AS mm ON mm.match_id = m.match_id
 WHERE event = '${event}'
     AND player_id NOT LIKE '%Bot%'
     AND player_id NOT LIKE '%bot%'
@@ -766,18 +791,22 @@ function stripJSONQuotes(s) {
  *   rows  = [{ name, wins, played, losses, winRate, playRate, adjWinRate }, ...]
  *   totals = { wins, played, losses, winRate, adjWinRate }
  */
-function computeProStats(winsBQ, playedBQ) {
+// countKey: "pro_count" (all matches) or "pro_count_nonmirror" (mirror
+// matches excluded). Older result rows without the non-mirror column fall
+// back to pro_count so nothing breaks.
+function computeProStats(winsBQ, playedBQ, countKey = "pro_count") {
+  const cnt = (r) => Number(r[countKey] ?? r.pro_count) || 0;
   const mapW = new Map();
   for (const r of winsBQ) {
     const name = stripJSONQuotes(r.pro_name);
     if (!name) continue;
-    mapW.set(name, (mapW.get(name) || 0) + (Number(r.pro_count) || 0));
+    mapW.set(name, (mapW.get(name) || 0) + cnt(r));
   }
   const mapP = new Map();
   for (const r of playedBQ) {
     const name = stripJSONQuotes(r.pro_name);
     if (!name) continue;
-    mapP.set(name, (mapP.get(name) || 0) + (Number(r.pro_count) || 0));
+    mapP.set(name, (mapP.get(name) || 0) + cnt(r));
   }
   // Union of all pro names that appear in either set
   const names = new Set([...mapW.keys(), ...mapP.keys()]);
@@ -818,33 +847,53 @@ function computeProStats(winsBQ, playedBQ) {
  * If period B data is provided, attach deltaWinRate / deltaPlayRate fields.
  */
 function buildProStats({ pvpWins, pvpPlayed, allWins, allPlayed }, optB) {
-  const pvp = computeProStats(pvpWins, pvpPlayed);
-  const all = computeProStats(allWins, allPlayed);
+  const pvp   = computeProStats(pvpWins, pvpPlayed);
+  const all   = computeProStats(allWins, allPlayed);
+  // Same data with mirror matches (both sides on the same pro) excluded
+  const pvpNm = computeProStats(pvpWins, pvpPlayed, "pro_count_nonmirror");
+  const allNm = computeProStats(allWins, allPlayed, "pro_count_nonmirror");
 
   // Attach PvP% to each PvP row (per pro: pvp_played / all_played)
-  const allMap = new Map(all.rows.map((r) => [r.name, r]));
-  pvp.rows.forEach((r) => {
-    const allRow = allMap.get(r.name);
-    r.pvpPct = allRow && allRow.played > 0 ? r.played / allRow.played : 0;
+  const attachPvpPct = (pvpStats, allStats) => {
+    const allMap = new Map(allStats.rows.map((r) => [r.name, r]));
+    pvpStats.rows.forEach((r) => {
+      const allRow = allMap.get(r.name);
+      r.pvpPct = allRow && allRow.played > 0 ? r.played / allRow.played : 0;
+    });
+    pvpStats.totals.pvpPct = allStats.totals.played > 0
+      ? pvpStats.totals.played / allStats.totals.played : 0;
+  };
+  attachPvpPct(pvp, all);
+  attachPvpPct(pvpNm, allNm);
+
+  // How many "played" rows were dropped as mirror matches. A PvP mirror
+  // contributes two played rows (one per human); a bot mirror only one, so
+  // this is reported as rows rather than matches.
+  const mirrorInfo = (full, nm) => ({
+    excludedPlayed: full.totals.played - nm.totals.played,
+    excludedPct: full.totals.played > 0
+      ? (full.totals.played - nm.totals.played) / full.totals.played : 0,
   });
-  pvp.totals.pvpPct = all.totals.played > 0 ? pvp.totals.played / all.totals.played : 0;
+  pvpNm.mirror = mirrorInfo(pvp, pvpNm);
+  allNm.mirror = mirrorInfo(all, allNm);
 
   // Optional comparison deltas vs period B
   if (optB) {
-    const bPvpMap = new Map(optB.pvp.rows.map((r) => [r.name, r]));
-    const bAllMap = new Map(optB.all.rows.map((r) => [r.name, r]));
-    pvp.rows.forEach((r) => {
-      const b = bPvpMap.get(r.name);
-      r.deltaWinRate  = b ? r.winRate  - b.winRate  : null;
-      r.deltaPlayRate = b ? r.playRate - b.playRate : null;
-    });
-    all.rows.forEach((r) => {
-      const b = bAllMap.get(r.name);
-      r.deltaWinRate  = b ? r.winRate  - b.winRate  : null;
-      r.deltaPlayRate = b ? r.playRate - b.playRate : null;
-    });
+    const attachDeltas = (stats, bStats) => {
+      if (!bStats) return;
+      const bMap = new Map(bStats.rows.map((r) => [r.name, r]));
+      stats.rows.forEach((r) => {
+        const b = bMap.get(r.name);
+        r.deltaWinRate  = b ? r.winRate  - b.winRate  : null;
+        r.deltaPlayRate = b ? r.playRate - b.playRate : null;
+      });
+    };
+    attachDeltas(pvp,   optB.pvp);
+    attachDeltas(all,   optB.all);
+    attachDeltas(pvpNm, optB.pvpNm);
+    attachDeltas(allNm, optB.allNm);
   }
-  return { pvp, all };
+  return { pvp, all, pvpNm, allNm };
 }
 
 function renderProStats(stats) {
@@ -900,20 +949,45 @@ function renderProStats(stats) {
     deltaWinRate: null,
   };
 
-  const renderWithTotals = (title, rows, totalsRow, cols) => {
+  // ---- Non-mirror variants (mirror matches excluded) ----
+  const pvpNmTotalsRow = {
+    pvpPct:   stats.pvpNm.totals.pvpPct,
+    name:     "Total",
+    wins:     stats.pvpNm.totals.wins,
+    played:   stats.pvpNm.totals.played,
+    playRate: 1,
+    winRate:  stats.pvpNm.totals.winRate,
+    deltaWinRate: null,
+  };
+  const allNmTotalsRow = {
+    name:       "Total",
+    wins:       stats.allNm.totals.wins,
+    played:     stats.allNm.totals.played,
+    playRate:   1,
+    winRate:    stats.allNm.totals.winRate,
+    adjWinRate: 0.5,
+    deltaWinRate: null,
+  };
+  const mirrorNote = (m) =>
+    `Mirror-match rows excluded: ${num(m.excludedPlayed)} of played (${pct(m.excludedPct, 1)})`;
+
+  const renderWithTotals = (title, rows, totalsRow, cols, note) => {
     const ths = cols.map((c) => `<th>${c.label}</th>`).join("");
     const trs = rows.map((r) => {
       const cls = r.cls ? `pro-row pro-${r.cls}` : "pro-row";
       return `<tr class="${cls}">${cols.map((c) => `<td>${c.cell(r)}</td>`).join("")}</tr>`;
     }).join("");
     const totals = `<tr class="total-row">${cols.map((c) => `<td>${c.cell(totalsRow)}</td>`).join("")}</tr>`;
-    return `<div class="agg-table"><h3>${esc(title)}</h3>
+    const noteHtml = note ? `<div class="agg-note">${esc(note)}</div>` : "";
+    return `<div class="agg-table"><h3>${esc(title)}</h3>${noteHtml}
       <table><thead><tr>${ths}</tr></thead><tbody>${trs}${totals}</tbody></table></div>`;
   };
 
   els.proStatsBody.innerHTML =
     renderWithTotals("PvP",  stats.pvp.rows, pvpTotalsRow, pvpCols) +
-    renderWithTotals("All",  stats.all.rows, allTotalsRow, allCols);
+    renderWithTotals("All",  stats.all.rows, allTotalsRow, allCols) +
+    renderWithTotals("PvP · non-mirror", stats.pvpNm.rows, pvpNmTotalsRow, pvpCols, mirrorNote(stats.pvpNm.mirror)) +
+    renderWithTotals("All · non-mirror", stats.allNm.rows, allNmTotalsRow, allCols, mirrorNote(stats.allNm.mirror));
 }
 
 function getBQParams() {
